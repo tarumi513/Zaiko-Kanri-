@@ -668,70 +668,7 @@ function loadFile(file) {
   reader.onload = e => {
     progressFill.style.width = '85%';
     try {
-      const data = new Uint8Array(e.target.result);
-      const wb   = XLSX.read(data, { type: 'array', cellDates: true });
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-
-      // Range detection
-      const ref   = ws['!ref'];
-      const range = XLSX.utils.decode_range(ref);
-
-      // Read header row 4 (index 3) to find columns
-      // Expected: A=コード, B=分類, C=メーカー, D=品名, E=規格, F=単位, K=残数量 (index 10)
-      // We'll use fixed column indices based on confirmed structure
-      const COL = { code: 0, cat: 1, maker: 2, name: 3, spec: 4, unit: 5, remain: 10 };
-
-      const rows = [];
-      const DATA_START = 4; // row index 4 = row 5 in Excel (0-indexed)
-      const maxRow = range.e.r;
-
-      for (let r = DATA_START; r <= maxRow; r++) {
-        const get = c => {
-          const cell = ws[XLSX.utils.encode_cell({ r, c })];
-          if (!cell) return '';
-          // cell.v が 0 のときでも正しく返す（|| では 0 が falsy になるため cell.v を直接使う）
-          return cell.v !== undefined ? cell.v : '';
-        };
-        const code = String(get(COL.code)).trim();
-        const name = String(get(COL.name)).trim();
-        if (!code || !name) continue; // skip empty rows
-
-        rows.push({
-          code,
-          cat:    String(get(COL.cat)).trim(),
-          maker:  String(get(COL.maker)).trim(),
-          name,
-          spec:   String(get(COL.spec)).trim(),
-          unit:   String(get(COL.unit)).trim(),
-          remain: get(COL.remain),
-          nameNorm: normalize(name),
-        });
-      }
-
-      outQtyMap = {};
-      filterOutOnly = false;
-      const fSwitch = document.getElementById('filterSwitchWrap');
-      if (fSwitch) fSwitch.classList.remove('active');
-      const btnExp = document.getElementById('btnExport');
-      if (btnExp) btnExp.disabled = true;
-
-      allRows = rows;
-      filtered = rows;
-      progressFill.style.width = '100%';
-      setTimeout(() => progressWrap.classList.remove('show'), 500);
-
-      statusBadge.className = 'badge loaded';
-      statusBadge.innerHTML = `✅ <span>${rows.length.toLocaleString()} 件 読み込み完了</span>`;
-
-      document.getElementById('searchPanel').style.display = 'block';
-      document.getElementById('controlsRow').style.display = 'flex';
-      document.getElementById('statsRow').style.display    = 'flex';
-      document.getElementById('tableWrap').style.display   = 'block';
-      document.getElementById('totalCount').textContent     = rows.length.toLocaleString();
-
-      renderTable(rows);
-      document.getElementById('searchInput').focus();
-
+      parseAndLoadWorkbook(e.target.result, file.name);
     } catch(err) {
       progressWrap.classList.remove('show');
       statusBadge.className = 'badge error';
@@ -741,6 +678,103 @@ function loadFile(file) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function parseAndLoadWorkbook(arrayBuffer, fileName) {
+  const data = new Uint8Array(arrayBuffer);
+  const wb   = XLSX.read(data, { type: 'array', cellDates: true });
+  const ws   = wb.Sheets[wb.SheetNames[0]];
+
+  // Range detection
+  const ref   = ws['!ref'];
+  const range = XLSX.utils.decode_range(ref);
+
+  const COL = { code: 0, cat: 1, maker: 2, name: 3, spec: 4, unit: 5, remain: 10 };
+
+  const rows = [];
+  const DATA_START = 4; // row index 4 = row 5 in Excel (0-indexed)
+  const maxRow = range.e.r;
+
+  for (let r = DATA_START; r <= maxRow; r++) {
+    const get = c => {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (!cell) return '';
+      return cell.v !== undefined ? cell.v : '';
+    };
+    const code = String(get(COL.code)).trim();
+    const name = String(get(COL.name)).trim();
+    if (!code || !name) continue;
+
+    rows.push({
+      code,
+      cat:    String(get(COL.cat)).trim(),
+      maker:  String(get(COL.maker)).trim(),
+      name,
+      spec:   String(get(COL.spec)).trim(),
+      unit:   String(get(COL.unit)).trim(),
+      remain: get(COL.remain),
+      nameNorm: normalize(name),
+    });
+  }
+
+  outQtyMap = {};
+  filterOutOnly = false;
+  const fSwitch = document.getElementById('filterSwitchWrap');
+  if (fSwitch) fSwitch.classList.remove('active');
+  const btnExp = document.getElementById('btnExport');
+  if (btnExp) btnExp.disabled = true;
+
+  allRows = rows;
+  filtered = rows;
+  progressFill.style.width = '100%';
+  setTimeout(() => progressWrap.classList.remove('show'), 500);
+
+  statusBadge.className = 'badge loaded';
+  statusBadge.innerHTML = `✅ <span>${rows.length.toLocaleString()} 件 読み込み完了</span>`;
+
+  document.getElementById('searchPanel').style.display = 'block';
+  document.getElementById('controlsRow').style.display = 'flex';
+  document.getElementById('statsRow').style.display    = 'flex';
+  document.getElementById('tableWrap').style.display   = 'block';
+  document.getElementById('totalCount').textContent     = rows.length.toLocaleString();
+
+  renderTable(rows);
+  document.getElementById('searchInput').focus();
+}
+
+// 起動時にdata.xlsxが存在すれば自動ロードする処理
+window.addEventListener('DOMContentLoaded', () => {
+  loadAutoData();
+});
+
+async function loadAutoData() {
+  try {
+    // 同じディレクトリの data.xlsx を取得
+    const res = await fetch('./data.xlsx');
+    if (!res.ok) {
+      // ファイルがない（404など）の場合は手動選択にする
+      return;
+    }
+    
+    // UI表示を自動ロード中にする
+    document.getElementById('fileName').textContent = 'data.xlsx';
+    statusBar.style.display = 'flex';
+    progressWrap.classList.add('show');
+    progressFill.style.width = '30%';
+    statusBadge.className = 'badge loading';
+    statusBadge.innerHTML = '<div class="spinner"></div><span>data.xlsx を自動読み込み中…</span>';
+    statusDetail.textContent = '自動取得中...';
+
+    const buffer = await res.arrayBuffer();
+    progressFill.style.width = '80%';
+    
+    parseAndLoadWorkbook(buffer, 'data.xlsx');
+  } catch (err) {
+    console.log("data.xlsx の自動ロードを行いませんでした（手動選択可能です）", err);
+    // エラー時はローディング表示をクリアする
+    progressWrap.classList.remove('show');
+    statusBar.style.display = 'none';
+  }
 }
 
 // =============================================
