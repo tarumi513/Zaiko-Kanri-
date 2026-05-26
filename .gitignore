@@ -1,0 +1,7 @@
+# Excel files (data templates)
+*.xlsx
+*.xls
+
+# OS generated files
+.DS_Store
+Thumbs.db

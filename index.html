@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>在庫コード検索</title>
+  <meta name="description" content="品名キーワードで在庫コードをすばやく検索。複数キーワードAND絞り込み対応。" />
+
+  <!-- SheetJS -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ===== RESET & BASE ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #1c232d;
+      --border:    rgba(99,178,255,0.12);
+      --accent:    #3b8afa;
+      --accent2:   #7c5cfc;
+      --green:     #2dd4a0;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --danger:    #f85149;
+      --glass:     rgba(255,255,255,0.04);
+      --glow:      0 0 24px rgba(59,138,250,0.18);
+      --radius:    14px;
+      --radius-sm: 8px;
+    }
+
+    html { font-size: 15px; scroll-behavior: smooth; }
+    body {
+      font-family: 'Noto Sans JP', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse 80% 60% at 20% -10%, rgba(59,138,250,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 90% 110%, rgba(124,92,252,0.08) 0%, transparent 60%);
+    }
+
+    /* ===== LAYOUT ===== */
+    .app-header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,17,23,0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .app-header .logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+      box-shadow: var(--glow);
+    }
+    .app-header h1 {
+      font-size: 1.1rem; font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .app-header .sub { font-size: 0.75rem; color: var(--muted); margin-top: 1px; }
+
+    .main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 60px; }
+
+    /* ===== FILE LOADER ===== */
+    .file-zone {
+      background: var(--glass);
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .file-zone::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(59,138,250,0.04), rgba(124,92,252,0.04));
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .file-zone:hover, .file-zone.drag { border-color: var(--accent); background: rgba(59,138,250,0.05); }
+    .file-zone:hover::before, .file-zone.drag::before { opacity: 1; }
+    .file-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .file-zone .icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .file-zone p { color: var(--muted); font-size: 0.9rem; }
+    .file-zone p strong { color: var(--text); }
+
+    /* ===== STATUS ===== */
+    .status-bar {
+      margin-top: 16px;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 0.82rem;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.78rem;
+    }
+    .badge.loaded  { background: rgba(45,212,160,0.12); color: var(--green); border: 1px solid rgba(45,212,160,0.25); }
+    .badge.loading { background: rgba(59,138,250,0.12); color: var(--accent); border: 1px solid rgba(59,138,250,0.25); }
+    .badge.error   { background: rgba(248,81,73,0.12);  color: var(--danger); border: 1px solid rgba(248,81,73,0.25); }
+    .spinner { width: 10px; height: 10px; border: 2px solid transparent; border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+
+    /* ===== SEARCH PANEL ===== */
+    .search-panel {
+      margin-top: 28px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--glow);
+    }
+    .search-panel label {
+      display: block;
+      font-size: 0.78rem; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+    .search-row {
+      display: flex; gap: 10px; align-items: center;
+    }
+    .search-input {
+      flex: 1;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      font-size: 1rem;
+      font-family: inherit;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .search-input::placeholder { color: var(--muted); }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59,138,250,0.15);
+    }
+    .btn-clear {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      padding: 11px 16px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .btn-clear:hover { border-color: var(--danger); color: var(--danger); }
+
+    .hint {
+      margin-top: 10px;
+      font-size: 0.78rem; color: var(--muted);
+      display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+    }
+    .hint-chip {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .hint-chip:hover { background: rgba(59,138,250,0.12); border-color: var(--accent); color: var(--accent); }
+
+    /* ===== STATS ROW ===== */
+    .stats-row {
+      margin-top: 20px;
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+    .stat-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 18px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .stat-card .val { font-size: 1.4rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .stat-card .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+    .stat-card.accent .val { color: var(--accent); }
+    .stat-card.green .val  { color: var(--green); }
+
+    /* ===== TABLE ===== */
+    .table-wrap {
+      margin-top: 24px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .table-scroll { overflow-x: auto; max-height: 65vh; overflow-y: auto; }
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.84rem;
+    }
+    thead {
+      position: sticky; top: 0; z-index: 10;
+      background: linear-gradient(180deg, var(--bg3), rgba(28,35,45,0.95));
+      backdrop-filter: blur(8px);
+    }
+    th {
+      padding: 11px 14px;
+      text-align: left;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      user-select: none;
+      cursor: pointer;
+    }
+    th:hover { color: var(--accent); }
+    th.sort-asc::after  { content: ' ▲'; font-size: 0.65rem; }
+    th.sort-desc::after { content: ' ▼'; font-size: 0.65rem; }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      transition: background 0.1s;
+    }
+    tbody tr:hover { background: rgba(59,138,250,0.06); }
+    tbody tr:last-child { border-bottom: none; }
+    td { padding: 10px 14px; vertical-align: middle; }
+
+    .td-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .td-name { max-width: 340px; }
+    .td-name .highlight { background: rgba(59,138,250,0.25); border-radius: 3px; padding: 0 2px; }
+    .td-num {
+      font-family: 'JetBrains Mono', monospace;
+      text-align: right;
+      color: var(--muted);
+    }
+    .td-num.positive  { color: var(--green); }
+    .td-num.zero      { color: var(--muted); }
+    .td-num.negative  { color: var(--danger); }
+    .badge-cat {
+      display: inline-block;
+      padding: 2px 8px; border-radius: 20px;
+      font-size: 0.7rem; font-weight: 600;
+      background: rgba(124,92,252,0.15); color: #b19ffc;
+      border: 1px solid rgba(124,92,252,0.25);
+    }
+
+    /* copy button */
+    .btn-copy {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: var(--muted);
+      padding: 3px 7px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: all 0.15s;
+      margin-left: 4px;
+    }
+    .btn-copy:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-copy.copied { color: var(--green); border-color: var(--green); }
+
+    /* ===== OUT STOCK SIMULATION ===== */
+    .input-out {
+      width: 76px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 5px 8px;
+      color: var(--text);
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .input-out:focus {
+      border-color: var(--accent);
+    }
+    /* Chrome, Safari, Edge, Opera: スピンボタン非表示 */
+    .input-out::-webkit-outer-spin-button,
+    .input-out::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    /* Firefox: スピンボタン非表示 */
+    .input-out[type=number] {
+      -moz-appearance: textfield;
+    }
+    .td-preview {
+      font-family: 'JetBrains Mono', monospace;
+      text-align: right;
+      font-weight: 600;
+    }
+    .preview-arrow {
+      color: var(--muted);
+      margin: 0 6px;
+      font-size: 0.8rem;
+    }
+    .preview-after {
+      color: var(--green);
+    }
+    .preview-after.zero {
+      color: var(--muted);
+    }
+    .preview-after.negative {
+      color: var(--danger);
+    }
+
+    /* ===== EXPORT & FILTER CONTROLS ===== */
+    .controls-row {
+      margin-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .filter-switch-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .switch-label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .switch-track {
+      width: 44px;
+      height: 22px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      position: relative;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    .switch-thumb {
+      width: 16px;
+      height: 16px;
+      background: var(--muted);
+      border-radius: 50%;
+      position: absolute;
+      top: 2px;
+      left: 3px;
+      transition: transform 0.3s, background 0.3s;
+    }
+    .filter-switch-wrap.active .switch-track {
+      background: rgba(59,138,250,0.2);
+      border-color: var(--accent);
+    }
+    .filter-switch-wrap.active .switch-thumb {
+      background: var(--accent);
+      transform: translateX(20px);
+    }
+
+    .btn-export {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      padding: 10px 18px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(59, 138, 250, 0.25);
+      transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+    }
+    .btn-export:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(59, 138, 250, 0.35);
+    }
+    .btn-export:active {
+      transform: translateY(1px);
+    }
+    .btn-export:disabled {
+      background: var(--bg3);
+      color: var(--muted);
+      box-shadow: none;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    /* ===== EMPTY / LOADING STATES ===== */
+    .placeholder {
+      text-align: center; padding: 60px 20px;
+      color: var(--muted); font-size: 0.9rem;
+    }
+    .placeholder .big { font-size: 3rem; margin-bottom: 12px; }
+
+    /* ===== PROGRESS BAR ===== */
+    .progress-wrap { margin-top: 14px; display: none; }
+    .progress-wrap.show { display: block; }
+    .progress-track {
+      height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 2px;
+      width: 0%; transition: width 0.2s;
+      animation: shimmer 1.5s infinite;
+      background-size: 200% 100%;
+    }
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 600px) {
+      .main { padding: 16px 10px 80px; }
+      .app-header { padding: 10px 14px; }
+      .search-panel { padding: 16px; }
+      .search-row { flex-direction: column; align-items: stretch; }
+      .btn-clear { width: 100%; text-align: center; }
+      
+      /* モバイルで横スクロールをしやすくし、テーブルの特定列を最小幅に固定 */
+      th, td { padding: 8px 10px; font-size: 0.8rem; }
+      .td-code { font-size: 0.75rem; white-space: nowrap; }
+      .td-name { min-width: 180px; max-width: 240px; }
+      .input-out { width: 68px; padding: 4px 6px; font-size: 0.85rem; }
+      
+      .controls-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+      }
+      .btn-export {
+        width: 100%;
+        justify-content: center;
+        padding: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="app-header">
+  <div class="logo">📦</div>
+  <div>
+    <h1>在庫コード検索</h1>
+    <div class="sub">品名キーワードで在庫コードをすばやく特定</div>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- FILE LOADER -->
+  <div class="file-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".xlsx,.xls" />
+    <div class="icon">📂</div>
+    <p><strong>在庫一覧 xlsx ファイルを選択</strong>またはここにドロップ</p>
+    <p style="margin-top:6px">全社在庫一覧.xlsx などに対応</p>
+  </div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="status-bar" id="statusBar" style="display:none">
+    <div class="badge loading" id="statusBadge"><div class="spinner" id="spinner"></div><span id="statusText">読み込み中…</span></div>
+    <span id="statusDetail" style="color:var(--muted)"></span>
+  </div>
+
+  <!-- SEARCH PANEL -->
+  <div class="search-panel" id="searchPanel" style="display:none">
+    <label for="searchInput">🔍 品名キーワード検索（スペース区切りでAND絞り込み）</label>
+    <div class="search-row">
+      <input
+        type="search"
+        id="searchInput"
+        class="search-input"
+        placeholder="例: キャスティング GC    または    casting liner"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button class="btn-clear" id="btnClear" onclick="clearSearch()">クリア</button>
+    </div>
+    <div class="hint">
+      <span>入力例:</span>
+      <span class="hint-chip" onclick="setHint('GC キャスティング')">GC キャスティング</span>
+      <span class="hint-chip" onclick="setHint('liner #1')">liner #1</span>
+      <span class="hint-chip" onclick="setHint('ライナー')">ライナー</span>
+      <span style="margin-left:auto;font-size:0.72rem">※半角/全角・かな/カナ を自動で正規化して検索します</span>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls-row" id="controlsRow" style="display:none">
+    <div class="filter-switch-wrap" id="filterSwitchWrap" onclick="toggleFilterOutOnly()">
+      <div class="switch-track">
+        <div class="switch-thumb"></div>
+      </div>
+      <span class="switch-label">出庫入力ありのみ表示</span>
+    </div>
+    <button class="btn-export" id="btnExport" onclick="exportOutList()" disabled>
+      📥 出庫リストを Excel で保存
+    </button>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row" id="statsRow" style="display:none">
+    <div class="stat-card accent">
+      <div class="val" id="hitCount">0</div>
+      <div class="lbl">ヒット件数</div>
+    </div>
+    <div class="stat-card">
+      <div class="val" id="totalCount">0</div>
+      <div class="lbl">総データ件数</div>
+    </div>
+    <div class="stat-card green">
+      <div class="val" id="fileName">—</div>
+      <div class="lbl">読み込みファイル</div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-wrap" id="tableWrap" style="display:none">
+    <div class="table-scroll">
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th onclick="sortBy(0)" id="th0">コード</th>
+            <th onclick="sortBy(1)" id="th1">分類</th>
+            <th onclick="sortBy(2)" id="th2">メーカー</th>
+            <th onclick="sortBy(3)" id="th3">品名</th>
+            <th onclick="sortBy(4)" id="th4">規格</th>
+            <th onclick="sortBy(5)" id="th5">単位</th>
+            <th onclick="sortBy(6)" id="th6" style="text-align:right">現在庫</th>
+            <th style="text-align:center;width:100px">出庫入力</th>
+            <th style="text-align:right;width:130px">出庫後在庫</th>
+          </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- EMPTY STATE -->
+  <div class="placeholder" id="emptyState" style="display:none">
+    <div class="big">🔍</div>
+    <div>キーワードに一致する品名が見つかりませんでした</div>
+    <div style="margin-top:6px;font-size:0.8rem">別のキーワードをお試しください（例：英語・カナ・型番など）</div>
+  </div>
+
+</main>
+
+<script>
+// =============================================
+//  DATA
+// =============================================
+let allRows    = [];  // { code, cat, maker, name, spec, unit, remain, nameNorm }
+let filtered   = [];
+let sortCol    = -1;
+let sortDir    = 1;   // 1=asc, -1=desc
+let outQtyMap  = {};  // code -> inputted out stock quantity
+let filterOutOnly = false;
+
+// =============================================
+//  NORMALIZER（半角/全角 カナ・英数 正規化）
+// =============================================
+const HAN_TO_ZEN_MAP = {
+  'ｦ':'ヲ','ｧ':'ァ','ｨ':'ィ','ｩ':'ゥ','ｪ':'ェ','ｫ':'ォ','ｬ':'ャ','ｭ':'ュ','ｮ':'ョ',
+  'ｯ':'ッ','ｰ':'ー','ｱ':'ア','ｲ':'イ','ｳ':'ウ','ｴ':'エ','ｵ':'オ','ｶ':'カ','ｷ':'キ',
+  'ｸ':'ク','ｹ':'ケ','ｺ':'コ','ｻ':'サ','ｼ':'シ','ｽ':'ス','ｾ':'セ','ｿ':'ソ','ﾀ':'タ',
+  'ﾁ':'チ','ﾂ':'ツ','ﾃ':'テ','ﾄ':'ト','ﾅ':'ナ','ﾆ':'ニ','ﾇ':'ヌ','ﾈ':'ネ','ﾉ':'ノ',
+  'ﾊ':'ハ','ﾋ':'ヒ','ﾌ':'フ','ﾍ':'ヘ','ﾎ':'ホ','ﾏ':'マ','ﾐ':'ミ','ﾑ':'ム','ﾒ':'メ',
+  'ﾓ':'モ','ﾔ':'ヤ','ﾕ':'ユ','ﾖ':'ヨ','ﾗ':'ラ','ﾘ':'リ','ﾙ':'ル','ﾚ':'レ','ﾛ':'ロ',
+  'ﾜ':'ワ','ﾝ':'ン','ﾞ':'゛','ﾟ':'゜',
+};
+const DAKUTEN_MAP = {
+  'カ':'ガ','キ':'ギ','ク':'グ','ケ':'ゲ','コ':'ゴ','サ':'ザ','シ':'ジ','ス':'ズ',
+  'セ':'ゼ','ソ':'ゾ','タ':'ダ','チ':'ヂ','ツ':'ヅ','テ':'デ','ト':'ド','ハ':'バ',
+  'ヒ':'ビ','フ':'ブ','ヘ':'ベ','ホ':'ボ','ウ':'ヴ',
+};
+const HANDAKUTEN_MAP = { 'ハ':'パ','ヒ':'ピ','フ':'プ','ヘ':'ペ','ホ':'ポ' };
+
+function hanToZen(str) {
+  let result = '';
+  for (let i = 0; i < str.length; i++) {
+    const c  = str[i];
+    const c2 = str[i + 1];
+    const z  = HAN_TO_ZEN_MAP[c];
+    if (z) {
+      if (c2 === 'ﾞ' && DAKUTEN_MAP[z])    { result += DAKUTEN_MAP[z];    i++; continue; }
+      if (c2 === 'ﾟ' && HANDAKUTEN_MAP[z]) { result += HANDAKUTEN_MAP[z]; i++; continue; }
+      result += z;
+    } else {
+      result += c;
+    }
+  }
+  return result;
+}
+
+function normalize(str) {
+  if (!str) return '';
+  let s = String(str);
+  // 半角カナ → 全角カナ
+  s = hanToZen(s);
+  // 全角英数 → 半角
+  s = s.replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  // ひらがな → カタカナ
+  s = s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
+  // 大文字化
+  s = s.toUpperCase();
+  return s;
+}
+
+// =============================================
+//  FILE HANDLING
+// =============================================
+const dropZone    = document.getElementById('dropZone');
+const fileInput   = document.getElementById('fileInput');
+const statusBar   = document.getElementById('statusBar');
+const statusBadge = document.getElementById('statusBadge');
+const statusText  = document.getElementById('statusText');
+const statusDetail= document.getElementById('statusDetail');
+const spinner     = document.getElementById('spinner');
+const progressWrap= document.getElementById('progressWrap');
+const progressFill= document.getElementById('progressFill');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+function loadFile(file) {
+  document.getElementById('fileName').textContent = file.name;
+  statusBar.style.display = 'flex';
+  progressWrap.classList.add('show');
+  progressFill.style.width = '0%';
+  statusBadge.className = 'badge loading';
+  statusBadge.innerHTML = '<div class="spinner"></div><span>読み込み中…</span>';
+  statusDetail.textContent = file.name;
+
+  const reader = new FileReader();
+  reader.onprogress = e => {
+    if (e.lengthComputable) {
+      progressFill.style.width = (e.loaded / e.total * 70) + '%';
+    }
+  };
+  reader.onload = e => {
+    progressFill.style.width = '85%';
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb   = XLSX.read(data, { type: 'array', cellDates: true });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+
+      // Range detection
+      const ref   = ws['!ref'];
+      const range = XLSX.utils.decode_range(ref);
+
+      // Read header row 4 (index 3) to find columns
+      // Expected: A=コード, B=分類, C=メーカー, D=品名, E=規格, F=単位, K=残数量 (index 10)
+      // We'll use fixed column indices based on confirmed structure
+      const COL = { code: 0, cat: 1, maker: 2, name: 3, spec: 4, unit: 5, remain: 10 };
+
+      const rows = [];
+      const DATA_START = 4; // row index 4 = row 5 in Excel (0-indexed)
+      const maxRow = range.e.r;
+
+      for (let r = DATA_START; r <= maxRow; r++) {
+        const get = c => {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          if (!cell) return '';
+          // cell.v が 0 のときでも正しく返す（|| では 0 が falsy になるため cell.v を直接使う）
+          return cell.v !== undefined ? cell.v : '';
+        };
+        const code = String(get(COL.code)).trim();
+        const name = String(get(COL.name)).trim();
+        if (!code || !name) continue; // skip empty rows
+
+        rows.push({
+          code,
+          cat:    String(get(COL.cat)).trim(),
+          maker:  String(get(COL.maker)).trim(),
+          name,
+          spec:   String(get(COL.spec)).trim(),
+          unit:   String(get(COL.unit)).trim(),
+          remain: get(COL.remain),
+          nameNorm: normalize(name),
+        });
+      }
+
+      outQtyMap = {};
+      filterOutOnly = false;
+      const fSwitch = document.getElementById('filterSwitchWrap');
+      if (fSwitch) fSwitch.classList.remove('active');
+      const btnExp = document.getElementById('btnExport');
+      if (btnExp) btnExp.disabled = true;
+
+      allRows = rows;
+      filtered = rows;
+      progressFill.style.width = '100%';
+      setTimeout(() => progressWrap.classList.remove('show'), 500);
+
+      statusBadge.className = 'badge loaded';
+      statusBadge.innerHTML = `✅ <span>${rows.length.toLocaleString()} 件 読み込み完了</span>`;
+
+      document.getElementById('searchPanel').style.display = 'block';
+      document.getElementById('controlsRow').style.display = 'flex';
+      document.getElementById('statsRow').style.display    = 'flex';
+      document.getElementById('tableWrap').style.display   = 'block';
+      document.getElementById('totalCount').textContent     = rows.length.toLocaleString();
+
+      renderTable(rows);
+      document.getElementById('searchInput').focus();
+
+    } catch(err) {
+      progressWrap.classList.remove('show');
+      statusBadge.className = 'badge error';
+      statusBadge.innerHTML = `🚨 <span>読み込みエラー</span>`;
+      statusDetail.textContent = err.message;
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// =============================================
+//  SEARCH
+// =============================================
+const searchInput = document.getElementById('searchInput');
+searchInput.addEventListener('input', doSearch);
+
+function doSearch() {
+  const raw = searchInput.value;
+  const keywords = raw.trim().split(/[\s　]+/).filter(k => k).map(k => normalize(k));
+
+  let temp = allRows;
+  if (filterOutOnly) {
+    temp = temp.filter(row => {
+      const val = outQtyMap[row.code];
+      return val !== undefined && val !== null && val.trim() !== '' && Number(val) > 0;
+    });
+  }
+
+  if (keywords.length === 0) {
+    filtered = temp;
+  } else {
+    filtered = temp.filter(row =>
+      keywords.every(kw => row.nameNorm.includes(kw))
+    );
+  }
+
+  document.getElementById('hitCount').textContent = filtered.length.toLocaleString();
+  sortCol = -1;
+  document.querySelectorAll('thead th').forEach(th => th.className = '');
+  renderTable(filtered, raw.trim());
+}
+
+function clearSearch() {
+  searchInput.value = '';
+  doSearch();
+}
+
+function setHint(val) {
+  searchInput.value = val;
+  doSearch();
+  searchInput.focus();
+}
+
+// =============================================
+//  SORT
+// =============================================
+function sortBy(col) {
+  if (sortCol === col) { sortDir *= -1; }
+  else { sortCol = col; sortDir = 1; }
+
+  document.querySelectorAll('thead th').forEach((th, i) => {
+    th.className = i === col ? (sortDir === 1 ? 'sort-asc' : 'sort-desc') : '';
+  });
+
+  const keys = ['code','cat','maker','name','spec','unit','remain'];
+  const key  = keys[col];
+  filtered = [...filtered].sort((a, b) => {
+    const va = a[key] ?? '';
+    const vb = b[key] ?? '';
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
+    return String(va).localeCompare(String(vb), 'ja') * sortDir;
+  });
+  renderTable(filtered, searchInput.value.trim());
+}
+
+// =============================================
+//  RENDER
+// =============================================
+function renderTable(rows, rawQuery) {
+  const tbody    = document.getElementById('resultBody');
+  const empty    = document.getElementById('emptyState');
+  const tableWrap = document.getElementById('tableWrap');
+
+  if (rows.length === 0) {
+    tableWrap.style.display = 'none';
+    empty.style.display     = 'block';
+    return;
+  }
+  empty.style.display     = 'none';
+  tableWrap.style.display = 'block';
+
+  // Build highlight patterns from query
+  let patterns = [];
+  if (rawQuery) {
+    patterns = rawQuery.trim().split(/[\s　]+/).filter(k => k).map(k =>
+      new RegExp(escapeRegex(k), 'gi')
+    );
+  }
+
+  const cap   = Math.min(rows.length, 2000); // render max 2000 for performance
+  const slice = rows.slice(0, cap);
+
+  let html = '';
+  for (const row of slice) {
+    // 残数量：0 も有効な値として表示
+    const remainRaw = row.remain;
+    const remain = (remainRaw !== '' && remainRaw !== null && remainRaw !== undefined)
+      ? Number(remainRaw) : NaN;
+    const remainTd = !isNaN(remain)
+      ? `<td class="td-num ${remain > 0 ? 'positive' : remain < 0 ? 'negative' : 'zero'}">${remain.toLocaleString()}</td>`
+      : `<td class="td-num">—</td>`;
+
+    const nameHtml = patterns.length
+      ? highlightAll(escHtml(row.name), patterns)
+      : escHtml(row.name);
+
+    const outQtyVal = outQtyMap[row.code] || '';
+    const previewHtml = getPreviewHtml(remain, Number(outQtyVal));
+
+    html += `<tr>
+      <td class="td-code">
+        ${escHtml(row.code)}
+        <button class="btn-copy" onclick="copyCode(this,'${escHtml(row.code)}')" title="コピー">⎘</button>
+      </td>
+      <td>${row.cat ? `<span class="badge-cat">${escHtml(row.cat)}</span>` : ''}</td>
+      <td style="color:var(--muted)">${escHtml(row.maker)}</td>
+      <td class="td-name">${nameHtml}</td>
+      <td style="color:var(--muted)">${escHtml(row.spec)}</td>
+      <td style="color:var(--muted)">${escHtml(row.unit)}</td>
+      ${remainTd}
+      <td style="text-align:center">
+        <input type="number" min="0" class="input-out" value="${outQtyVal}" 
+               oninput="handleOutInput(this, '${escHtml(row.code)}', ${remain})" 
+               placeholder="0" />
+      </td>
+      <td class="td-preview" id="preview-${escHtml(row.code)}">
+        ${previewHtml}
+      </td>
+    </tr>`;
+  }
+  if (rows.length > cap) {
+    html += `<tr><td colspan="9" style="text-align:center;padding:14px;color:var(--muted);font-size:0.82rem">… 上位 ${cap.toLocaleString()} 件を表示中（全 ${rows.length.toLocaleString()} 件）</td></tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+function getPreviewHtml(currentQty, outQty) {
+  if (isNaN(currentQty)) return '—';
+  if (isNaN(outQty) || outQty <= 0) return '—';
+  const after = currentQty - outQty;
+  const afterClass = after > 0 ? 'positive' : after < 0 ? 'negative' : 'zero';
+  return `<span style="color:var(--muted)">${currentQty.toLocaleString()}</span><span class="preview-arrow">➔</span><span class="preview-after ${afterClass}">${after.toLocaleString()}</span>`;
+}
+
+function handleOutInput(inputElem, code, currentQty) {
+  const valStr = inputElem.value.trim();
+  const valNum = valStr !== '' ? Number(valStr) : NaN;
+  
+  if (!isNaN(valNum) && valNum > 0) {
+    outQtyMap[code] = valStr;
+  } else {
+    delete outQtyMap[code];
+  }
+  
+  const previewCell = document.getElementById(`preview-${code}`);
+  if (previewCell) {
+    previewCell.innerHTML = getPreviewHtml(currentQty, valNum);
+  }
+  
+  updateExportButtonState();
+}
+
+function updateExportButtonState() {
+  const btnExp = document.getElementById('btnExport');
+  if (!btnExp) return;
+  const hasItems = Object.keys(outQtyMap).some(k => {
+    const val = outQtyMap[k];
+    return val !== undefined && val !== null && val.trim() !== '' && Number(val) > 0;
+  });
+  btnExp.disabled = !hasItems;
+}
+
+function toggleFilterOutOnly() {
+  filterOutOnly = !filterOutOnly;
+  const wrap = document.getElementById('filterSwitchWrap');
+  if (wrap) {
+    wrap.classList.toggle('active', filterOutOnly);
+  }
+  doSearch();
+}
+
+function exportOutList() {
+  const outRows = allRows.filter(row => {
+    const val = outQtyMap[row.code];
+    return val !== undefined && val !== null && val.trim() !== '' && Number(val) > 0;
+  });
+  
+  if (outRows.length === 0) {
+    alert("出庫数が入力されている商品がありません。");
+    return;
+  }
+  
+  const data = outRows.map(row => {
+    const qty = Number(outQtyMap[row.code]);
+    const current = (row.remain !== '' && row.remain !== null && row.remain !== undefined) ? Number(row.remain) : 0;
+    const after = current - qty;
+    return {
+      'コード': row.code,
+      '分類': row.cat,
+      'メーカー': row.maker,
+      '品名': row.name,
+      '規格': row.spec,
+      '単位': row.unit,
+      '現在庫数': current,
+      '出庫数': qty,
+      '出庫後在庫': after
+    };
+  });
+  
+  try {
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "出庫リスト");
+    
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    
+    XLSX.writeFile(workbook, `出庫リスト_${dateStr}.xlsx`);
+  } catch (err) {
+    console.error("エクスポートエラー:", err);
+    alert("エラーが発生しました: " + err.message);
+  }
+}
+
+function highlightAll(html, patterns) {
+  // Highlight on the original text using regex (case-insensitive)
+  let result = html;
+  for (const pat of patterns) {
+    result = result.replace(pat, m => `<mark class="highlight">${m}</mark>`);
+  }
+  return result;
+}
+
+// =============================================
+//  COPY
+// =============================================
+function copyCode(btn, code) {
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = '✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+// =============================================
+//  UTILS
+// =============================================
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+</script>
+</body>
+</html>
