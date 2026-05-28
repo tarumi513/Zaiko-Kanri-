@@ -288,8 +288,6 @@
         <thead>
           <tr>
             <th onclick="sortBy('code')">コード</th>
-            <th onclick="sortBy('cat')" class="hide-on-mobile">分類</th>
-            <th class="hide-on-mobile">メーカー</th>
             <th onclick="sortBy('name')">品名</th>
             <th>規格</th>
             <th>現在庫</th>
@@ -562,11 +560,9 @@ function renderTable() {
     
     html += `<tr>
       <td class="td-code">${esc(item.code)}</td>
-      <td class="hide-on-mobile">${esc(item.cat)}</td>
-      <td class="td-num muted hide-on-mobile" style="text-align:left">${esc(item.maker)}</td>
       <td>${nameHtml}</td>
       <td class="td-num muted" style="text-align:left">${esc(item.spec)}</td>
-      <td class="td-num ${stat.remain < 0 ? 'negative' : stat.remain > 0 ? 'positive' : 'muted'}">${stat.remain.toLocaleString()} <span class="hide-on-mobile">${esc(item.unit)}</span></td>
+      <td class="td-num ${stat.remain < 0 ? 'negative' : stat.remain > 0 ? 'positive' : 'muted'}">${stat.remain.toLocaleString()}</td>
       <td class="td-num muted">${stat.out1M.toLocaleString()}</td>
       <td class="td-num muted">${stat.out1Y.toLocaleString()}</td>
       <td class="action-cell">
