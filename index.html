@@ -401,10 +401,15 @@ async function loadFromDB() {
 }
 
 async function refreshData() {
-  allItems = await db.items.toArray();
-  allLogs = await db.logs.toArray();
-  calculateStats();
-  doSearch();
+  try {
+    allItems = await db.items.toArray();
+    allLogs = await db.logs.toArray();
+    calculateStats();
+    doSearch();
+  } catch(e) {
+    console.error("Refresh Error:", e);
+    alert("データの読み込み中にエラーが発生しました。");
+  }
 }
 
 function calculateStats() {
@@ -500,24 +505,31 @@ const searchInput = document.getElementById('searchInput');
 searchInput.addEventListener('input', doSearch);
 
 function doSearch() {
-  const raw = searchInput.value;
-  const keywords = raw.trim().split(/[\s　]+/).filter(k => k).map(k => normalize(k));
+  try {
+    const raw = searchInput.value || '';
+    const keywords = raw.trim().split(/[\s　]+/).filter(k => k).map(k => normalize(k));
 
-  if (keywords.length === 0) {
-    filteredItems = allItems.slice();
-  } else {
-    filteredItems = allItems.filter(row =>
-      keywords.every(kw => row.nameNorm.includes(kw) || normalize(row.code).includes(kw))
-    );
+    if (keywords.length === 0) {
+      filteredItems = allItems.slice();
+    } else {
+      filteredItems = allItems.filter(row =>
+        keywords.every(kw => 
+          (row.nameNorm || '').includes(kw) || 
+          normalize(row.code || '').includes(kw)
+        )
+      );
+    }
+    
+    filteredItems.sort((a, b) => {
+      const v1 = a[sortKey] || '';
+      const v2 = b[sortKey] || '';
+      return String(v1).localeCompare(String(v2), 'ja') * (sortAsc ? 1 : -1);
+    });
+
+    renderTable();
+  } catch(e) {
+    console.error("Search Error:", e);
   }
-  
-  filteredItems.sort((a, b) => {
-    const v1 = a[sortKey] || '';
-    const v2 = b[sortKey] || '';
-    return String(v1).localeCompare(String(v2), 'ja') * (sortAsc ? 1 : -1);
-  });
-
-  renderTable();
 }
 
 function clearSearch() { searchInput.value = ''; doSearch(); }
