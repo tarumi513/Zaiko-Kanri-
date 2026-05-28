@@ -261,8 +261,9 @@
     <button class="btn" onclick="openReportModal()">📊 月次レポート</button>
     <button class="btn" onclick="openItemModal()">＋ 新規アイテム</button>
     <button class="btn" onclick="exportBackup()">📥 バックアップ</button>
-    <button class="btn" onclick="document.getElementById('importBackupFile').click()">📤 復元・統合</button>
+    <button class="btn" onclick="if(checkAdmin()) document.getElementById('importBackupFile').click()">📤 復元・統合</button>
     <input type="file" id="importBackupFile" accept=".json" style="display:none" onchange="importBackup(event)" />
+    <button class="device-name-btn" onclick="resetAdminPassword()" title="管理者パスワードのリセット" style="margin-left:0; border:none; background:transparent;">🔒</button>
   </div>
 </header>
 
@@ -622,6 +623,7 @@ async function registerLog(code, type) {
 // =============================================
 const modalOverlay = document.getElementById('itemModalOverlay');
 function openItemModal() {
+  if (!checkAdmin()) return;
   document.getElementById('itemModalTitle').innerText = "アイテム追加";
   document.getElementById('modalMode').value = "add";
   document.getElementById('mCode').value = '';
@@ -639,6 +641,7 @@ function openItemModal() {
   modalOverlay.style.display = 'flex';
 }
 function editItem(code) {
+  if (!checkAdmin()) return;
   const item = allItems.find(i => i.code === code);
   const stat = itemStats[code] || { remain: 0 };
   if(!item) return;
@@ -871,6 +874,36 @@ function promptDeviceName() {
 function updateDeviceNameUI() {
   const el = document.getElementById('deviceNameUI');
   if (el) el.innerText = currentDeviceName || '未設定';
+}
+
+function checkAdmin() {
+  const currentPass = localStorage.getItem('inventoryAdminPass');
+  if (!currentPass) {
+    const newPass = prompt("【初回設定】\n管理者用パスワードを設定してください。\n※この端末でのみ有効です。今後、編集や復元時に必要になります。");
+    if (!newPass) return false;
+    localStorage.setItem('inventoryAdminPass', newPass);
+    alert("管理者パスワードを設定しました。");
+    return true;
+  } else {
+    const input = prompt("管理パスワードを入力してください:");
+    if (input === currentPass) {
+      return true;
+    } else {
+      if (input !== null) alert("パスワードが違います。");
+      return false;
+    }
+  }
+}
+
+function resetAdminPassword() {
+  if (!localStorage.getItem('inventoryAdminPass')) {
+    alert("パスワードはまだ設定されていません。");
+    return;
+  }
+  if (confirm("管理者パスワードをリセット（削除）しますか？")) {
+    localStorage.removeItem('inventoryAdminPass');
+    alert("パスワードをリセットしました。次回編集時に再設定できます。");
+  }
 }
 
 function highlightAll(text, rawQuery) {
