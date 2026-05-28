@@ -235,6 +235,14 @@
       th, td { padding: 8px 6px; font-size: 0.78rem; }
     }
 
+    .device-name-btn {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px; padding: 4px 10px; font-size: 0.75rem; color: var(--text);
+      cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+      margin-left: 12px; transition: all 0.2s;
+    }
+    .device-name-btn:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3); }
+
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -243,7 +251,10 @@
 <header class="app-header">
   <div class="logo">📦</div>
   <div>
-    <h1>在庫コード検索</h1>
+    <h1 style="display:inline-block;">在庫コード検索</h1>
+    <button class="device-name-btn" onclick="promptDeviceName()" title="端末名を設定">
+      📱 <span id="deviceNameUI">未設定</span>
+    </button>
     <div class="sub">DB保存・自動予測対応版</div>
   </div>
   <div class="header-actions">
@@ -355,11 +366,19 @@ let itemStats = {}; // { code: { remain: 0, out1M: 0, out1Y: 0 } }
 let sortKey = 'code';
 let sortAsc = true;
 let geoPos = null;
+let currentDeviceName = localStorage.getItem('inventoryDeviceName') || '';
 
 // =============================================
 //  INIT & LOAD
 // =============================================
 window.addEventListener('DOMContentLoaded', async () => {
+  // 端末名が未設定なら設定を促す
+  if (!currentDeviceName) {
+    promptDeviceName();
+  } else {
+    updateDeviceNameUI();
+  }
+
   // Request Geolocation in background safely
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
@@ -589,7 +608,7 @@ async function registerLog(code, type) {
     type,
     qty,
     date: new Date().toISOString(),
-    device: navigator.userAgent,
+    device: currentDeviceName || navigator.userAgent,
     location: geoPos
   };
   
@@ -680,7 +699,7 @@ async function saveItem() {
         type: 'adjust',
         qty: newQty,
         date: new Date().toISOString(),
-        device: navigator.userAgent,
+        device: currentDeviceName || navigator.userAgent,
         location: geoPos
       });
     }
@@ -839,6 +858,21 @@ async function exportMonthlyReport() {
 // =============================================
 //  UTILS
 // =============================================
+function promptDeviceName() {
+  const input = prompt("この端末の名前を入力してください\n（例：メインPC、倉庫のiPad、〇〇のスマホ 等）", currentDeviceName);
+  if (input !== null) {
+    const name = input.trim() || '名称未設定';
+    localStorage.setItem('inventoryDeviceName', name);
+    currentDeviceName = name;
+    updateDeviceNameUI();
+  }
+}
+
+function updateDeviceNameUI() {
+  const el = document.getElementById('deviceNameUI');
+  if (el) el.innerText = currentDeviceName || '未設定';
+}
+
 function highlightAll(text, rawQuery) {
   if (!rawQuery) return esc(text);
   const keywords = rawQuery.trim().split(/[\s　]+/).filter(k => k);
