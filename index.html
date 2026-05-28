@@ -388,7 +388,9 @@ async function loadFromDB() {
         const buf = await res.arrayBuffer();
         await parseExcel(buf);
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      console.warn("自動ロードスキップまたはエラー:", e);
+    }
   } else {
     document.getElementById('setupSection').style.display = 'none';
     await refreshData();
@@ -452,37 +454,43 @@ document.getElementById('fileInput').addEventListener('change', e => {
 });
 
 async function parseExcel(arrayBuffer) {
-  const data = new Uint8Array(arrayBuffer);
-  const wb = XLSX.read(data, { type: 'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const range = XLSX.utils.decode_range(ws['!ref']);
-  
-  const COL = { code: 0, cat: 1, maker: 2, name: 3, spec: 4, unit: 5, remain: 10 };
-  const rows = [];
-  
-  for (let r = 4; r <= range.e.r; r++) {
-    const get = c => (ws[XLSX.utils.encode_cell({r, c})] || {}).v || '';
-    const code = String(get(COL.code)).trim();
-    const name = String(get(COL.name)).trim();
-    if (!code || !name) continue;
-    rows.push({
-      code, cat: String(get(COL.cat)), maker: String(get(COL.maker)),
-      name, spec: String(get(COL.spec)), unit: String(get(COL.unit)),
-      remain: get(COL.remain), nameNorm: normalize(name)
+  try {
+    const data = new Uint8Array(arrayBuffer);
+    const wb = XLSX.read(data, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    
+    const COL = { code: 0, cat: 1, maker: 2, name: 3, spec: 4, unit: 5, remain: 10 };
+    const rows = [];
+    
+    for (let r = 4; r <= range.e.r; r++) {
+      const get = c => (ws[XLSX.utils.encode_cell({r, c})] || {}).v || '';
+      const code = String(get(COL.code)).trim();
+      const name = String(get(COL.name)).trim();
+      if (!code || !name) continue;
+      rows.push({
+        code, cat: String(get(COL.cat)), maker: String(get(COL.maker)),
+        name, spec: String(get(COL.spec)), unit: String(get(COL.unit)),
+        remain: get(COL.remain), nameNorm: normalize(name)
+      });
+    }
+
+    showStatus("DB保存中...", "しばらくお待ちください");
+    await db.transaction('rw', db.items, async () => {
+      await db.items.clear();
+      await db.items.bulkPut(rows); // bulkAddからbulkPutに変更（重複コード対策）
     });
+
+    document.getElementById('setupSection').style.display = 'none';
+    await refreshData();
+    document.getElementById('mainApp').style.display = 'block';
+    document.getElementById('tableWrap').style.display = 'block';
+    hideStatus();
+  } catch (err) {
+    console.error("解析エラー:", err);
+    alert("読み込みエラー: " + err.message + "\n※Excelファイルの形式が異なるか、不正なデータが含まれている可能性があります。");
+    hideStatus();
   }
-
-  showStatus("DB保存中...", "しばらくお待ちください");
-  await db.transaction('rw', db.items, async () => {
-    await db.items.clear();
-    await db.items.bulkAdd(rows);
-  });
-
-  document.getElementById('setupSection').style.display = 'none';
-  await refreshData();
-  document.getElementById('mainApp').style.display = 'block';
-  document.getElementById('tableWrap').style.display = 'block';
-  hideStatus();
 }
 
 // =============================================
