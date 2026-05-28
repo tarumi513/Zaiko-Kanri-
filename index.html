@@ -250,7 +250,7 @@
     <button class="btn" onclick="openReportModal()">📊 月次レポート</button>
     <button class="btn" onclick="openItemModal()">＋ 新規アイテム</button>
     <button class="btn" onclick="exportBackup()">📥 バックアップ</button>
-    <button class="btn" onclick="document.getElementById('importBackupFile').click()">📤 復元</button>
+    <button class="btn" onclick="document.getElementById('importBackupFile').click()">📤 復元・統合</button>
     <input type="file" id="importBackupFile" accept=".json" style="display:none" onchange="importBackup(event)" />
   </div>
 </header>
@@ -715,21 +715,55 @@ async function importBackup(e) {
     try {
       const data = JSON.parse(ev.target.result);
       if (data.items && data.logs) {
-        if(confirm("現在のデータはすべて上書きされます。よろしいですか？")) {
+        
+        const isMerge = confirm("【データの統合】\n現在のデータにバックアップの内容を追加（マージ）しますか？\n\n・[OK] 追加する（別端末の記録を合体してレポート等に反映）\n・[キャンセル] 現在のデータを全て消去して完全に上書きする");
+        
+        showStatus("データ復元中...", "お待ちください");
+
+        if (!isMerge) {
+          if(confirm("※本当に現在のデータを全て消去して上書きしますか？")) {
+            await db.transaction('rw', db.items, db.logs, async () => {
+              await db.items.clear();
+              await db.logs.clear();
+              await db.items.bulkAdd(data.items);
+              await db.logs.bulkAdd(data.logs);
+            });
+            alert("すべてのデータを上書き復元しました");
+          }
+        } else {
+          // マージ（統合）処理
+          const localLogs = await db.logs.toArray();
+          const localLogKeys = new Set(localLogs.map(l => `${l.code}_${l.type}_${l.date}`));
+          
+          const newLogs = [];
+          for (const l of data.logs) {
+            const key = `${l.code}_${l.type}_${l.date}`;
+            if (!localLogKeys.has(key)) {
+              delete l.id; // 新規IDを自動採番させるため
+              newLogs.push(l);
+            }
+          }
+
           await db.transaction('rw', db.items, db.logs, async () => {
-            await db.items.clear();
-            await db.logs.clear();
-            await db.items.bulkAdd(data.items);
-            await db.logs.bulkAdd(data.logs);
+            // アイテムはコードをキーに上書き・追加
+            await db.items.bulkPut(data.items);
+            // ログは差分（新規）のみ追加
+            if (newLogs.length > 0) {
+              await db.logs.bulkAdd(newLogs);
+            }
           });
-          alert("復元しました");
-          await refreshData();
+          
+          alert(`データを統合しました！\n追加された新しいログ: ${newLogs.length}件`);
         }
+        
+        hideStatus();
+        await refreshData();
       } else {
         alert("無効なバックアップファイルです");
       }
     } catch(err) {
       alert("エラー: " + err.message);
+      hideStatus();
     }
   };
   reader.readAsText(file);
