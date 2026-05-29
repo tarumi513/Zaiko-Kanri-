@@ -241,9 +241,27 @@
       background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
       border-radius: 20px; padding: 4px 10px; font-size: 0.75rem; color: var(--text);
       cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
-      margin-left: 12px; transition: all 0.2s;
+      transition: all 0.2s;
     }
     .device-name-btn:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3); }
+
+    .hamburger-btn { display: none; background: transparent; border: none; font-size: 1.8rem; color: #fff; cursor: pointer; padding: 4px 8px; margin-left: auto; }
+    .side-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; }
+    .side-panel-overlay.show { display: block; }
+    
+    @media (max-width: 800px) {
+      .hamburger-btn { display: block; }
+      .header-actions {
+        position: fixed; top: 0; right: -280px; width: 260px; height: 100vh;
+        background: var(--bg-card); flex-direction: column; align-items: flex-start;
+        padding: 60px 20px 20px; box-shadow: -4px 0 15px rgba(0,0,0,0.5);
+        transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 1000;
+        overflow-y: auto;
+      }
+      .header-actions.open { right: 0; }
+      .header-actions .btn { width: 100%; text-align: left; margin-bottom: 12px; padding: 12px; font-size: 1rem; }
+      .device-name-btn { margin-bottom: 20px; width: 100%; justify-content: flex-start; padding: 10px; font-size: 1rem; }
+    }
 
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
@@ -252,22 +270,26 @@
 
 <header class="app-header">
   <div class="logo">📦</div>
-  <div>
-    <h1 style="display:inline-block;">在庫コード検索</h1>
+  <div style="flex:1">
+    <h1>在庫コード検索</h1>
+    <div class="sub">DB保存・自動予測対応版</div>
+  </div>
+  
+  <button class="hamburger-btn" onclick="toggleSidePanel()">☰</button>
+  
+  <div class="header-actions">
     <button class="device-name-btn" onclick="promptDeviceName()" title="端末名を設定">
       📱 <span id="deviceNameUI">未設定</span>
     </button>
-    <div class="sub">DB保存・自動予測対応版</div>
-  </div>
-  <div class="header-actions">
-    <button class="btn" onclick="openReportModal()">📊 月次レポート</button>
-    <button class="btn" onclick="openItemModal()">＋ 新規アイテム</button>
-    <button class="btn" onclick="exportBackup()">📥 バックアップ</button>
-    <button class="btn" onclick="if(checkAdmin()) document.getElementById('importBackupFile').click()">📤 復元・統合</button>
+    <button class="btn" onclick="openReportModal(); toggleSidePanel();">📊 月次レポート</button>
+    <button class="btn" onclick="openItemModal(); toggleSidePanel();">＋ 新規アイテム</button>
+    <button class="btn" onclick="exportBackup(); toggleSidePanel();">📥 バックアップ</button>
+    <button class="btn" onclick="if(checkAdmin()) { document.getElementById('importBackupFile').click(); toggleSidePanel(); }">📤 復元・統合</button>
+    <button class="device-name-btn" onclick="resetAdminPassword(); toggleSidePanel();" title="管理者パスワードのリセット" style="border:none; background:transparent;">🔒 パスワードリセット</button>
     <input type="file" id="importBackupFile" accept=".json" style="display:none" onchange="importBackup(event)" />
-    <button class="device-name-btn" onclick="resetAdminPassword()" title="管理者パスワードのリセット" style="margin-left:0; border:none; background:transparent;">🔒</button>
   </div>
 </header>
+<div id="sidePanelOverlay" class="side-panel-overlay" onclick="toggleSidePanel()"></div>
 
 <main class="main">
 
@@ -991,6 +1013,14 @@ function resetAdminPassword() {
     localStorage.removeItem('inventoryAdminPass');
     alert("パスワードをリセットしました。次回編集時に再設定できます。");
   }
+}
+
+function toggleSidePanel() {
+  if (window.innerWidth > 800) return; // Prevent toggle action on PC view
+  const panel = document.querySelector('.header-actions');
+  const overlay = document.getElementById('sidePanelOverlay');
+  if (panel) panel.classList.toggle('open');
+  if (overlay) overlay.classList.toggle('show');
 }
 
 function highlightAll(text, rawQuery) {
