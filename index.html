@@ -283,7 +283,8 @@
     </button>
     <button class="btn" onclick="openReportModal(); toggleSidePanel();">📊 月次レポート</button>
     <button class="btn" onclick="openItemModal(); toggleSidePanel();">＋ 新規アイテム</button>
-    <button class="btn" onclick="exportBackup(); toggleSidePanel();">📥 バックアップ</button>
+    <button class="btn" onclick="exportMasterData(); toggleSidePanel();">📄 アイテムマスタDL</button>
+    <button class="btn" onclick="exportBackup(); toggleSidePanel();">📥 DBバックアップ</button>
     <button class="btn" onclick="if(checkAdmin()) { document.getElementById('importBackupFile').click(); toggleSidePanel(); }">📤 復元・統合</button>
     <button class="device-name-btn" onclick="resetAdminPassword(); toggleSidePanel();" title="管理者パスワードのリセット" style="border:none; background:transparent;">🔒 パスワードリセット</button>
     <input type="file" id="importBackupFile" accept=".json" style="display:none" onchange="importBackup(event)" />
@@ -958,6 +959,7 @@ async function exportMonthlyReport() {
       '分類': it.cat || '',
       '品名': it.name || '',
       '規格': it.spec || '',
+      'バーコード': it.barcode || '',
       '出庫数': log.qty,
       '端末情報': log.device || '',
       '位置情報': locStr
@@ -1006,6 +1008,7 @@ async function sendReportEmail() {
       'メーカー': item.maker || '',
       '品名': item.name || '',
       '規格': item.spec || '',
+      'バーコード': item.barcode || '',
       '出庫数': log.qty,
       '単位': item.unit || '',
       '端末情報': log.device || '',
@@ -1064,6 +1067,27 @@ function openEmailSettings() {
   localStorage.setItem('inventoryTargetEmail', newEmail.trim());
   localStorage.setItem('inventoryGasUrl', newUrl.trim());
   alert("メール設定を保存しました。");
+}
+
+async function exportMasterData() {
+  const items = await db.items.toArray();
+  const exportData = items.map(item => ({
+    'コード': item.code,
+    '分類': item.cat || '',
+    'メーカー': item.maker || '',
+    '品名': item.name || '',
+    '規格': item.spec || '',
+    '単位': item.unit || '',
+    'バーコード': item.barcode || ''
+  }));
+  
+  const worksheet = XLSX.utils.json_to_sheet(exportData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, `アイテムマスター`);
+  
+  const d = new Date();
+  const ym = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  XLSX.writeFile(workbook, `アイテムマスター_${ym}.xlsx`);
 }
 
 // =============================================
