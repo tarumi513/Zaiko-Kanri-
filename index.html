@@ -342,14 +342,19 @@
 <!-- REPORT MODAL -->
 <div class="modal-overlay" id="reportModalOverlay">
   <div class="modal">
-    <h2>月次レポート出力 (出庫ログ)</h2>
-    <div class="form-group">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2>月次レポート出力</h2>
+      <button class="btn-icon" onclick="openEmailSettings()" title="メール設定 (要管理者権限)" style="background:transparent; border:1px solid #ccc; font-size:1.2rem; padding:4px 8px;">⚙️</button>
+    </div>
+    <div class="form-group" style="margin-top:10px;">
       <label>対象月</label>
       <input type="month" id="reportMonth" />
     </div>
-    <div class="modal-actions">
+    <div class="modal-actions" style="margin-top: 30px; flex-wrap: wrap;">
       <button class="btn" onclick="closeReportModal()">キャンセル</button>
-      <button class="btn primary" onclick="exportMonthlyReport()">Excel出力</button>
+      <div style="flex:1;"></div>
+      <button class="btn" onclick="sendReportEmail()">📧 メール送信</button>
+      <button class="btn primary" onclick="exportMonthlyReport()">📥 ダウンロード</button>
     </div>
   </div>
 </div>
@@ -965,6 +970,100 @@ async function exportMonthlyReport() {
   
   XLSX.writeFile(workbook, `出庫レポート_${year}${month}.xlsx`);
   closeReportModal();
+}
+
+async function sendReportEmail() {
+  const targetEmail = localStorage.getItem('inventoryTargetEmail');
+  const gasUrl = localStorage.getItem('inventoryGasUrl');
+  if (!targetEmail || !gasUrl) {
+    alert("送信先メールアドレスまたはGAS設定が完了していません。\n右上の「⚙️」ボタンから設定を行ってください。");
+    return;
+  }
+
+  const rm = document.getElementById('reportMonth').value;
+  if (!rm) { alert("月を選択してください"); return; }
+  
+  const [year, month] = rm.split('-');
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
+
+  const logs = await db.logs.where('date').between(start.toISOString(), end.toISOString()).toArray();
+  const outLogs = logs.filter(l => l.type === 'out');
+  
+  if (outLogs.length === 0) {
+    alert("指定月の出庫記録がありません");
+    return;
+  }
+
+  const exportData = outLogs.map(log => {
+    const item = allItems.find(i => i.code === log.code) || {};
+    let locStr = '';
+    if (log.location) locStr = `https://maps.google.com/?q=${log.location.lat},${log.location.lng}`;
+    return {
+      '日時': new Date(log.date).toLocaleString('ja-JP'),
+      'コード': log.code,
+      '分類': item.cat || '',
+      'メーカー': item.maker || '',
+      '品名': item.name || '',
+      '規格': item.spec || '',
+      '出庫数': log.qty,
+      '単位': item.unit || '',
+      '端末情報': log.device || '',
+      '位置情報': locStr
+    };
+  });
+  
+  const worksheet = XLSX.utils.json_to_sheet(exportData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, `${year}年${month}月_出庫記録`);
+  
+  const wbout = XLSX.write(workbook, {bookType:'xlsx', type:'base64'});
+  const filename = `出庫レポート_${year}${month}.xlsx`;
+
+  showStatus("メール送信中...", "サーバーと通信しています");
+  
+  try {
+    const payload = {
+      email: targetEmail,
+      subject: `【在庫管理】出庫レポート（${year}年${month}月）`,
+      body: `${year}年${month}月の出庫レポートを添付いたします。\n\n本メールは在庫管理システムからの自動送信です。`,
+      filename: filename,
+      fileData: wbout
+    };
+
+    const res = await fetch(gasUrl, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    
+    const text = await res.text();
+    if (text.includes("error")) {
+      alert("送信に失敗しました:\n" + text);
+    } else {
+      alert("メールの送信が完了しました！");
+      closeReportModal();
+    }
+  } catch(err) {
+    alert("送信エラー: " + err.message + "\nGASのURLや通信環境を確認してください。");
+  } finally {
+    hideStatus();
+  }
+}
+
+function openEmailSettings() {
+  if (!checkAdmin()) return;
+  const currentUrl = localStorage.getItem('inventoryGasUrl') || '';
+  const currentEmail = localStorage.getItem('inventoryTargetEmail') || '';
+  
+  const newEmail = prompt("【メール設定】\nレポートの送信先メールアドレスを入力してください:", currentEmail);
+  if (newEmail === null) return;
+  
+  const newUrl = prompt("【メール設定】\nGoogle Apps Scriptの「WebアプリURL」を入力してください:\n（https://script.google.com/macros/s/...）", currentUrl);
+  if (newUrl === null) return;
+  
+  localStorage.setItem('inventoryTargetEmail', newEmail.trim());
+  localStorage.setItem('inventoryGasUrl', newUrl.trim());
+  alert("メール設定を保存しました。");
 }
 
 // =============================================
