@@ -10,6 +10,8 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <!-- Dexie.js for IndexedDB -->
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+  <!-- Html5-Qrcode for Barcode Scanning -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -286,9 +288,10 @@
 
   <!-- SEARCH PANEL -->
   <div class="search-panel" id="mainApp" style="display:none">
-    <label>🔍 品名キーワード検索（スペース区切りでAND）</label>
+    <label>🔍 品名・コード・バーコード検索（スペース区切りでAND）</label>
     <div class="search-row">
       <input type="search" id="searchInput" class="search-input" placeholder="例: キャスティング GC" autocomplete="off" />
+      <button class="btn primary" onclick="openScannerForSearch()">📷 検索</button>
       <button class="btn" onclick="clearSearch()">クリア</button>
     </div>
   </div>
@@ -341,10 +344,28 @@
     <div class="form-group"><label>品名*</label><input type="text" id="mName" /></div>
     <div class="form-group"><label>規格</label><input type="text" id="mSpec" /></div>
     <div class="form-group"><label>単位</label><input type="text" id="mUnit" /></div>
+    <div class="form-group">
+      <label>バーコード</label>
+      <div style="display:flex; gap:10px;">
+        <input type="text" id="mBarcode" placeholder="スキャンまたは手入力" style="flex:1" />
+        <button type="button" class="btn" onclick="openScannerForEdit()">📷 読取</button>
+      </div>
+    </div>
     <div class="form-group"><label>初期在庫（新規のみ）</label><input type="number" id="mRemain" value="0" /></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeItemModal()">キャンセル</button>
       <button class="btn primary" onclick="saveItem()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCANNER MODAL -->
+<div class="modal-overlay" id="scannerModalOverlay">
+  <div class="modal" style="text-align: center;">
+    <h2>バーコード読取</h2>
+    <div id="reader" style="width:100%; max-width:400px; margin: 0 auto;"></div>
+    <div class="modal-actions" style="justify-content: center;">
+      <button class="btn" onclick="closeScannerModal()">キャンセル</button>
     </div>
   </div>
 </div>
@@ -539,7 +560,8 @@ function doSearch() {
       filteredItems = allItems.filter(row =>
         keywords.every(kw => 
           (row.nameNorm || '').includes(kw) || 
-          normalize(row.code || '').includes(kw)
+          normalize(row.code || '').includes(kw) ||
+          normalize(row.barcode || '').includes(kw)
         )
       );
     }
@@ -633,6 +655,7 @@ function openItemModal() {
   document.getElementById('mName').value = '';
   document.getElementById('mSpec').value = '';
   document.getElementById('mUnit').value = '';
+  document.getElementById('mBarcode').value = '';
   
   const remainLabel = document.getElementById('mRemain').previousElementSibling;
   if(remainLabel) remainLabel.innerText = '初期在庫（新規のみ）';
@@ -655,6 +678,7 @@ function editItem(code) {
   document.getElementById('mName').value = item.name || '';
   document.getElementById('mSpec').value = item.spec || '';
   document.getElementById('mUnit').value = item.unit || '';
+  document.getElementById('mBarcode').value = item.barcode || '';
   
   const remainLabel = document.getElementById('mRemain').previousElementSibling;
   if(remainLabel) remainLabel.innerText = '現在庫の修正 (在庫調整)';
@@ -678,6 +702,7 @@ async function saveItem() {
     name,
     spec: document.getElementById('mSpec').value.trim(),
     unit: document.getElementById('mUnit').value.trim(),
+    barcode: document.getElementById('mBarcode').value.trim(),
     nameNorm: normalize(name)
   };
   
@@ -790,6 +815,63 @@ async function importBackup(e) {
   };
   reader.readAsText(file);
   e.target.value = ''; // reset
+}
+
+// =============================================
+//  BARCODE SCANNER
+// =============================================
+let html5QrCode = null;
+let scannerMode = ''; // 'search' or 'edit'
+
+function openScannerForSearch() {
+  scannerMode = 'search';
+  document.getElementById('scannerModalOverlay').style.display = 'flex';
+  startScanner();
+}
+
+function openScannerForEdit() {
+  scannerMode = 'edit';
+  document.getElementById('scannerModalOverlay').style.display = 'flex';
+  startScanner();
+}
+
+function closeScannerModal() {
+  document.getElementById('scannerModalOverlay').style.display = 'none';
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => {
+      html5QrCode.clear();
+      html5QrCode = null;
+    }).catch(err => {
+      console.error(err);
+      html5QrCode = null;
+    });
+  }
+}
+
+function startScanner() {
+  if (!html5QrCode) {
+    html5QrCode = new Html5Qrcode("reader");
+  }
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 250, height: 150 } },
+    (decodedText) => {
+      closeScannerModal();
+      if (scannerMode === 'search') {
+        const searchInp = document.getElementById('searchInput');
+        searchInp.value = searchInp.value ? searchInp.value + " " + decodedText : decodedText;
+        doSearch();
+      } else if (scannerMode === 'edit') {
+        document.getElementById('mBarcode').value = decodedText;
+      }
+    },
+    (errorMessage) => {
+      // parse errors are frequent, ignored
+    }
+  ).catch(err => {
+    alert("カメラの起動に失敗しました。ブラウザのカメラ権限が許可されているかご確認ください。");
+    closeScannerModal();
+  });
 }
 
 // =============================================
