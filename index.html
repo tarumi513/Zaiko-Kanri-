@@ -600,11 +600,16 @@ function renderTable() {
     const stat = itemStats[item.code] || { remain:0, out1M:0, out1Y:0 };
     const nameHtml = highlightAll(item.name, rawQuery);
     
-    html += `<tr>
+    // 発注アラート判定: 在庫が1ヶ月予測の半分以下 (かつ1ヶ月予測が1以上)
+    const needsReorder = (stat.out1M > 0) && (stat.remain <= (stat.out1M / 2));
+    const reorderBadge = needsReorder ? `<br><span style="display:inline-block; margin-top:4px; padding:2px 6px; background:#ffebee; color:#c62828; border-radius:12px; font-size:0.7rem; font-weight:bold; white-space:nowrap; border:1px solid #ef9a9a;">⚠️要発注</span>` : '';
+    const remainClass = stat.remain < 0 ? 'negative' : stat.remain > 0 ? 'positive' : 'muted';
+    
+    html += `<tr ${needsReorder ? 'style="background-color:rgba(255, 235, 238, 0.4);"' : ''}>
       <td class="td-code">${esc(item.code)}</td>
       <td>${nameHtml}</td>
       <td class="td-num muted" style="text-align:left">${esc(item.spec)}</td>
-      <td class="td-num ${stat.remain < 0 ? 'negative' : stat.remain > 0 ? 'positive' : 'muted'}">${stat.remain.toLocaleString()}</td>
+      <td class="td-num ${remainClass}" style="vertical-align:middle;">${stat.remain.toLocaleString()}${reorderBadge}</td>
       <td class="td-num muted">${stat.out1M.toLocaleString()}</td>
       <td class="td-num muted">${stat.out1Y.toLocaleString()}</td>
       <td class="action-cell">
