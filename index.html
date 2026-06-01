@@ -266,10 +266,35 @@
       .device-name-btn { margin-bottom: 20px; width: 100%; justify-content: flex-start; padding: 10px; font-size: 1rem; }
     }
 
+    /* ===== PORTRAIT WARNING ===== */
+    #portraitWarning {
+      display: none; position: fixed; inset: 0; background: rgba(13,17,23,0.95); backdrop-filter: blur(10px);
+      z-index: 9999; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 30px;
+    }
+    #portraitWarning .icon { font-size: 4rem; margin-bottom: 20px; animation: tiltPhone 2s infinite ease-in-out; }
+    #portraitWarning h2 { font-size: 1.5rem; margin-bottom: 15px; color: #fff; }
+    #portraitWarning p { color: var(--muted); font-size: 1rem; line-height: 1.5; }
+
+    @media screen and (orientation: portrait) and (pointer: coarse) {
+      #portraitWarning { display: flex; }
+    }
+
+    @keyframes tiltPhone {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(-90deg); }
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
+
+<!-- PORTRAIT WARNING OVERLAY -->
+<div id="portraitWarning">
+  <div class="icon">📱</div>
+  <h2>スマートフォンを<br>横向きにしてください</h2>
+  <p>このシステムは横画面での利用に最適化されています。<br>端末の画面ロックを解除し、横向きにしてご利用ください。</p>
+</div>
 
 <header class="app-header">
   <div class="logo">📦</div>
