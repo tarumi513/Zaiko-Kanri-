@@ -215,13 +215,21 @@
     /* ===== MODAL ===== */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
-      z-index: 1000; display: none; align-items: center; justify-content: center;
+      z-index: 1000; display: none; align-items: center; justify-content: center; padding: 10px;
     }
     .modal {
       background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
-      width: 100%; max-width: 500px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+      width: 100%; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+      max-height: 95vh; display: flex; flex-direction: column; overflow: hidden;
     }
-    .modal h2 { margin-bottom: 16px; font-size: 1.2rem; }
+    .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .modal-header h2 { margin: 0; font-size: 1.1rem; }
+    .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .modal-footer {
+      padding: 12px 20px; border-top: 1px solid var(--border); background: var(--bg3);
+      flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
+    }
+    
     .form-group { margin-bottom: 12px; }
     .form-group label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
     .form-group input {
@@ -229,7 +237,6 @@
       padding: 8px 12px; color: var(--text); outline: none;
     }
     .form-group input:focus { border-color: var(--accent); }
-    .modal-actions { margin-top: 24px; display: flex; justify-content: flex-end; gap: 10px; }
 
     .highlight { background-color: rgba(255, 235, 59, 0.35); color: #fff; border-radius: 2px; padding: 0 2px; }
     
@@ -372,15 +379,17 @@
 <!-- REPORT MODAL -->
 <div class="modal-overlay" id="reportModalOverlay">
   <div class="modal">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <h2>月次レポート出力</h2>
+    <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0;">月次レポート出力</h2>
       <button class="btn-icon" onclick="openEmailSettings()" title="メール設定 (要管理者権限)" style="background:transparent; border:1px solid #ccc; font-size:1.2rem; padding:4px 8px;">⚙️</button>
     </div>
-    <div class="form-group" style="margin-top:10px;">
-      <label>対象月</label>
-      <input type="month" id="reportMonth" />
+    <div class="modal-body">
+      <div class="form-group">
+        <label>対象月</label>
+        <input type="month" id="reportMonth" />
+      </div>
     </div>
-    <div class="modal-actions" style="margin-top: 30px; flex-wrap: wrap;">
+    <div class="modal-footer">
       <button class="btn" onclick="closeReportModal()">キャンセル</button>
       <div style="flex:1;"></div>
       <button class="btn" onclick="sendReportEmail()">📧 メール送信</button>
@@ -392,24 +401,32 @@
 <!-- ITEM MODAL -->
 <div class="modal-overlay" id="itemModalOverlay">
   <div class="modal">
-    <h2 id="itemModalTitle">アイテム追加</h2>
-    <input type="hidden" id="modalMode" value="add" />
-    <input type="hidden" id="modalOriginalCode" value="" />
-    <div class="form-group"><label>コード*</label><input type="text" id="mCode" /></div>
-    <div class="form-group"><label>分類</label><input type="text" id="mCat" /></div>
-    <div class="form-group"><label>メーカー</label><input type="text" id="mMaker" /></div>
-    <div class="form-group"><label>品名*</label><input type="text" id="mName" /></div>
-    <div class="form-group"><label>規格</label><input type="text" id="mSpec" /></div>
-    <div class="form-group"><label>単位</label><input type="text" id="mUnit" /></div>
-    <div class="form-group">
-      <label>バーコード</label>
-      <div style="display:flex; gap:10px;">
-        <input type="text" id="mBarcode" placeholder="スキャンまたは手入力" style="flex:1" />
-        <button type="button" class="btn" onclick="openScannerForEdit()">📷 読取</button>
-      </div>
+    <div class="modal-header">
+      <h2 id="itemModalTitle" style="margin:0;">アイテム追加</h2>
     </div>
-    <div class="form-group"><label>初期在庫（新規のみ）</label><input type="number" id="mRemain" value="0" /></div>
-    <div class="modal-actions">
+    <div class="modal-body">
+      <input type="hidden" id="modalMode" value="add" />
+      <input type="hidden" id="modalOriginalCode" value="" />
+      
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 12px;">
+        <div class="form-group"><label>コード*</label><input type="text" id="mCode" /></div>
+        <div class="form-group"><label>分類</label><input type="text" id="mCat" /></div>
+        <div class="form-group"><label>メーカー</label><input type="text" id="mMaker" /></div>
+        <div class="form-group"><label>品名*</label><input type="text" id="mName" /></div>
+        <div class="form-group"><label>規格</label><input type="text" id="mSpec" /></div>
+        <div class="form-group"><label>単位</label><input type="text" id="mUnit" /></div>
+      </div>
+      
+      <div class="form-group">
+        <label>バーコード</label>
+        <div style="display:flex; gap:10px;">
+          <input type="text" id="mBarcode" placeholder="スキャンまたは手入力" style="flex:1" />
+          <button type="button" class="btn" onclick="openScannerForEdit()">📷 読取</button>
+        </div>
+      </div>
+      <div class="form-group"><label>初期在庫（新規のみ）</label><input type="number" id="mRemain" value="0" /></div>
+    </div>
+    <div class="modal-footer">
       <button class="btn" onclick="closeItemModal()">キャンセル</button>
       <button class="btn primary" onclick="saveItem()">保存</button>
     </div>
@@ -418,10 +435,14 @@
 
 <!-- SCANNER MODAL -->
 <div class="modal-overlay" id="scannerModalOverlay">
-  <div class="modal" style="text-align: center;">
-    <h2>バーコード読取</h2>
-    <div id="reader" style="width:100%; max-width:400px; margin: 0 auto;"></div>
-    <div class="modal-actions" style="justify-content: center;">
+  <div class="modal" style="max-width: 400px;">
+    <div class="modal-header">
+      <h2 style="margin:0; text-align:center;">バーコード読取</h2>
+    </div>
+    <div class="modal-body" style="text-align: center;">
+      <div id="reader" style="width:100%; margin: 0 auto;"></div>
+    </div>
+    <div class="modal-footer" style="justify-content: center;">
       <button class="btn" onclick="closeScannerModal()">キャンセル</button>
     </div>
   </div>
