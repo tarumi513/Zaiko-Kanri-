@@ -324,11 +324,15 @@
   <!-- SEARCH PANEL -->
   <div class="search-panel" id="mainApp" style="display:none">
     <label>🔍 品名・コード・バーコード・音声で検索</label>
-    <div class="search-row" style="display:flex; gap:6px;">
-      <input type="search" id="searchInput" class="search-input" placeholder="キーワード検索..." autocomplete="off" style="flex: 0 1 55%; min-width: 0; width: 55%;" />
-      <button class="btn" id="voiceSearchBtn" onclick="startVoiceSearch()" title="音声入力" style="padding: 6px 12px; font-size:1.2rem; min-width:44px; display:flex; justify-content:center; align-items:center;">🎤</button>
-      <button class="btn primary" onclick="openScannerForSearch()" title="カメラ読取" style="padding: 6px 12px; font-size:1.2rem; min-width:44px; display:flex; justify-content:center; align-items:center;">📷</button>
-      <button class="btn" onclick="clearSearch()" title="クリア" style="padding: 6px 12px; font-size:1.2rem; min-width:44px; display:flex; justify-content:center; align-items:center;">✕</button>
+    <div class="search-row" style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; gap:6px; width:100%;">
+        <input type="search" id="searchInput" class="search-input" placeholder="キーワード検索..." autocomplete="off" style="flex:1; width:100%;" />
+        <button class="btn" onclick="clearSearch()" title="クリア" style="padding: 6px 12px; font-size:1.2rem; min-width:44px; display:flex; justify-content:center; align-items:center;">✕</button>
+      </div>
+      <div style="display:flex; gap:8px; width:100%;">
+        <button class="btn" id="voiceSearchBtn" onclick="startVoiceSearch()" title="音声入力" style="flex:1; padding: 10px; font-size:1.1rem; display:flex; justify-content:center; align-items:center;">🎤 音声</button>
+        <button class="btn primary" onclick="openScannerForSearch()" title="カメラ読取" style="flex:1; padding: 10px; font-size:1.1rem; display:flex; justify-content:center; align-items:center;">📷 カメラ</button>
+      </div>
     </div>
   </div>
 
