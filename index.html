@@ -293,7 +293,6 @@
     <button class="device-name-btn" onclick="promptDeviceName()" title="端末名を設定">
       📱 <span id="deviceNameUI">未設定</span>
     </button>
-    <button class="btn" onclick="openHistoryModal(); toggleSidePanel();">🕒 最近の操作履歴</button>
     <button class="btn" onclick="openReportModal(); toggleSidePanel();">📊 月次レポート</button>
     <button class="btn" onclick="openItemModal(); toggleSidePanel();">＋ 新規アイテム</button>
     <button class="btn" onclick="exportMasterData(); toggleSidePanel();">📄 アイテムマスタDL</button>
@@ -736,6 +735,7 @@ function renderTable() {
             <button class="btn-icon" style="color:#1565c0; border-color:rgba(21,101,192,0.3)" onclick="registerLog('${esc(item.code)}', 'order')" title="発注">🛒 発注</button>
             <button class="btn-icon btn-in" onclick="registerLog('${esc(item.code)}', 'receive')" title="入荷">📥 入荷</button>
             <button class="btn-icon" onclick="editItem('${esc(item.code)}')" title="編集">✏️ 編集</button>
+            <button class="btn-icon" style="color:var(--danger); border-color:rgba(248,81,73,0.3); margin-left: auto;" onclick="undoLastLog('${esc(item.code)}')" title="直近の操作を取り消し">❌ 取消</button>
           </div>
         </div>
       </td>
@@ -962,6 +962,30 @@ async function undoLog(id) {
   await db.logs.delete(id);
   await refreshData();
   await renderHistory(); // Refresh the list
+}
+
+async function undoLastLog(code) {
+  const logs = await db.logs.where('code').equals(code).toArray();
+  if (logs.length === 0) {
+    alert("このアイテムの操作履歴はありません");
+    return;
+  }
+  logs.sort((a, b) => new Date(b.date) - new Date(a.date));
+  const lastLog = logs[0];
+  
+  let actionStr = '';
+  if (lastLog.type === 'in' || lastLog.type === 'receive') actionStr = '入荷';
+  else if (lastLog.type === 'out') actionStr = '出庫';
+  else if (lastLog.type === 'order') actionStr = '発注';
+  else if (lastLog.type === 'adjust') actionStr = '調整';
+  
+  const d = new Date(lastLog.date);
+  const dateStr = String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  
+  if (!confirm(`このアイテムの直近の操作を取り消しますか？\n処理: ${actionStr}\n数量: ${lastLog.qty}\n日時: ${dateStr}`)) return;
+  
+  await db.logs.delete(lastLog.id);
+  await refreshData();
 }
 
 // =============================================
