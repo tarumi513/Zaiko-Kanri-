@@ -251,7 +251,7 @@
     .side-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; }
     .side-panel-overlay.show { display: block; }
     
-    @media (max-width: 800px) {
+    @media (max-width: 1024px) {
       .hamburger-btn { display: block; z-index: 1001; }
       .header-actions {
         position: fixed; top: 0; right: -280px; width: 260px; height: 100vh;
@@ -1272,7 +1272,7 @@ function resetAdminPassword() {
 }
 
 function toggleSidePanel() {
-  if (window.innerWidth > 800) return; // Prevent toggle action on PC view
+  if (window.innerWidth > 1024) return; // Prevent toggle action on PC view
   const panel = document.querySelector('.header-actions');
   const overlay = document.getElementById('sidePanelOverlay');
   if (panel) panel.classList.toggle('open');
