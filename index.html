@@ -735,7 +735,7 @@ function renderTable() {
             <button class="btn-icon" style="color:#1565c0; border-color:rgba(21,101,192,0.3)" onclick="registerLog('${esc(item.code)}', 'order')" title="発注">🛒 発注</button>
             <button class="btn-icon btn-in" onclick="registerLog('${esc(item.code)}', 'receive')" title="入荷">📥 入荷</button>
             <button class="btn-icon" onclick="editItem('${esc(item.code)}')" title="編集">✏️ 編集</button>
-            <button class="btn-icon" style="color:var(--danger); border-color:rgba(248,81,73,0.3); margin-left: auto;" onclick="undoLastLog('${esc(item.code)}')" title="直近の操作を取り消し">❌ 取消</button>
+            <button class="btn-icon" style="color:var(--danger); border-color:rgba(248,81,73,0.3);" onclick="undoLastLog('${esc(item.code)}')" title="直近の操作を取り消し">❌ 取消</button>
           </div>
         </div>
       </td>
