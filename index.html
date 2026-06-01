@@ -507,6 +507,7 @@ function calculateStats() {
   allItems.forEach(item => {
     itemStats[item.code] = {
       remain: Number(item.remain) || 0,
+      ordered: 0,
       out1M: 0,
       out1Y: 0
     };
@@ -518,15 +519,23 @@ function calculateStats() {
     const d = new Date(log.date);
     const qty = Number(log.qty) || 0;
 
-    if (log.type === 'in') {
+    if (log.type === 'in' || log.type === 'receive') {
       stat.remain += qty;
+      if (log.type === 'receive') stat.ordered -= qty;
     } else if (log.type === 'out') {
       stat.remain -= qty;
       if (d >= th30) stat.out1M += qty;
       if (d >= th365) stat.out1Y += qty;
     } else if (log.type === 'adjust') {
       stat.remain = qty;
+    } else if (log.type === 'order') {
+      stat.ordered += qty;
     }
+  });
+
+  // Clamp ordered to 0
+  Object.values(itemStats).forEach(s => {
+    if (s.ordered < 0) s.ordered = 0;
   });
 }
 
@@ -651,20 +660,22 @@ function renderTable() {
     // 発注アラート判定: 在庫が1ヶ月予測の半分以下 (かつ1ヶ月予測が1以上)
     const needsReorder = (stat.out1M > 0) && (stat.remain <= (stat.out1M / 2));
     const reorderBadge = needsReorder ? `<br><span style="display:inline-block; margin-top:4px; padding:2px 6px; background:#ffebee; color:#c62828; border-radius:12px; font-size:0.7rem; font-weight:bold; white-space:nowrap; border:1px solid #ef9a9a;">⚠️要発注</span>` : '';
+    const pendingBadge = stat.ordered > 0 ? `<br><span style="display:inline-block; margin-top:4px; padding:2px 6px; background:#e3f2fd; color:#1565c0; border-radius:12px; font-size:0.7rem; font-weight:bold; white-space:nowrap; border:1px solid #90caf9;">発注済:${stat.ordered}</span>` : '';
     const remainClass = stat.remain < 0 ? 'negative' : stat.remain > 0 ? 'positive' : 'muted';
     
-    html += `<tr ${needsReorder ? 'style="background-color:rgba(255, 235, 238, 0.4);"' : ''}>
+    html += `<tr ${needsReorder && stat.ordered === 0 ? 'style="background-color:rgba(255, 235, 238, 0.4);"' : ''}>
       <td class="td-code">${esc(item.code)}</td>
       <td>${nameHtml}</td>
       <td class="td-num muted" style="text-align:left">${esc(item.spec)}</td>
-      <td class="td-num ${remainClass}" style="vertical-align:middle;">${stat.remain.toLocaleString()}${reorderBadge}</td>
+      <td class="td-num ${remainClass}" style="vertical-align:middle;">${stat.remain.toLocaleString()}${reorderBadge}${pendingBadge}</td>
       <td class="td-num muted">${stat.out1M.toLocaleString()}</td>
       <td class="td-num muted">${stat.out1Y.toLocaleString()}</td>
       <td class="action-cell">
-        <input type="number" min="1" class="qty-input" id="qty-${esc(item.code)}" placeholder="数量" />
-        <button class="btn-icon btn-in" onclick="registerLog('${esc(item.code)}', 'in')">入庫</button>
-        <button class="btn-icon btn-out" onclick="registerLog('${esc(item.code)}', 'out')">出庫</button>
-        <button class="btn-icon" onclick="editItem('${esc(item.code)}')">編集</button>
+        <input type="number" min="1" class="qty-input" id="qty-${esc(item.code)}" placeholder="数" style="width:50px" />
+        <button class="btn-icon btn-out" onclick="registerLog('${esc(item.code)}', 'out')" title="出庫">📤</button>
+        <button class="btn-icon" style="color:#1565c0; border-color:rgba(21,101,192,0.3)" onclick="registerLog('${esc(item.code)}', 'order')" title="発注">🛒</button>
+        <button class="btn-icon btn-in" onclick="registerLog('${esc(item.code)}', 'receive')" title="入荷">📥</button>
+        <button class="btn-icon" onclick="editItem('${esc(item.code)}')" title="編集">✏️</button>
       </td>
     </tr>`;
   }
@@ -687,6 +698,33 @@ async function registerLog(code, type) {
     device: currentDeviceName || navigator.userAgent,
     location: geoPos
   };
+
+  if (type === 'receive') {
+    // Calculate lead time based on FIFO order fulfillment
+    const codeLogs = await db.logs.where('code').equals(code).toArray();
+    codeLogs.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    const orders = codeLogs.filter(l => l.type === 'order');
+    const receives = codeLogs.filter(l => l.type === 'receive');
+    
+    const totalReceivedBefore = receives.reduce((sum, l) => sum + Number(l.qty), 0);
+    const targetItemIndex = totalReceivedBefore + 1;
+    
+    let acc = 0;
+    let targetOrderDate = null;
+    for (const o of orders) {
+      acc += Number(o.qty);
+      if (acc >= targetItemIndex) {
+        targetOrderDate = o.date;
+        break;
+      }
+    }
+    
+    if (targetOrderDate) {
+      const ms = new Date() - new Date(targetOrderDate);
+      log.leadTimeDays = Math.round(ms / (1000 * 60 * 60 * 24));
+    }
+  }
   
   await db.logs.add(log);
   input.value = '';
@@ -1012,15 +1050,15 @@ async function exportMonthlyReport() {
   const [year, month] = ym.split('-');
   
   const allLogs = await db.logs.toArray();
-  // Filter out-stock logs for the specific month
+  // Filter logs for the specific month
   const targetLogs = allLogs.filter(log => {
-    if (log.type !== 'out') return false;
+    if (!['out', 'order', 'receive'].includes(log.type)) return false;
     const d = new Date(log.date);
     return d.getFullYear() === Number(year) && (d.getMonth() + 1) === Number(month);
   });
   
   if (targetLogs.length === 0) {
-    alert("指定された月の出庫記録はありません。");
+    alert("指定された月の履歴記録はありません。");
     return;
   }
   
@@ -1039,14 +1077,18 @@ async function exportMonthlyReport() {
       locStr = `Lat:${log.location.lat.toFixed(4)}, Lng:${log.location.lng.toFixed(4)}`;
     }
     
+    let actionType = log.type === 'out' ? '出庫' : log.type === 'order' ? '発注' : '入荷';
+    
     return {
       '日時': dateStr,
+      '処理': actionType,
       'コード': log.code,
       '分類': it.cat || '',
       '品名': it.name || '',
       '規格': it.spec || '',
       'バーコード': it.barcode || '',
-      '出庫数': log.qty,
+      '数量': log.qty,
+      '入荷リードタイム(日)': log.leadTimeDays !== undefined ? log.leadTimeDays : '',
       '端末情報': log.device || '',
       '位置情報': locStr
     };
@@ -1076,10 +1118,10 @@ async function sendReportEmail() {
   const end = new Date(year, month, 1);
 
   const logs = await db.logs.where('date').between(start.toISOString(), end.toISOString()).toArray();
-  const outLogs = logs.filter(l => l.type === 'out');
+  const outLogs = logs.filter(l => ['out', 'order', 'receive'].includes(l.type));
   
   if (outLogs.length === 0) {
-    alert("指定月の出庫記録がありません");
+    alert("指定月の履歴記録がありません");
     return;
   }
 
@@ -1087,15 +1129,20 @@ async function sendReportEmail() {
     const item = allItems.find(i => i.code === log.code) || {};
     let locStr = '';
     if (log.location) locStr = `https://maps.google.com/?q=${log.location.lat},${log.location.lng}`;
+    
+    let actionType = log.type === 'out' ? '出庫' : log.type === 'order' ? '発注' : '入荷';
+    
     return {
       '日時': new Date(log.date).toLocaleString('ja-JP'),
+      '処理': actionType,
       'コード': log.code,
       '分類': item.cat || '',
       'メーカー': item.maker || '',
       '品名': item.name || '',
       '規格': item.spec || '',
       'バーコード': item.barcode || '',
-      '出庫数': log.qty,
+      '数量': log.qty,
+      '入荷リードタイム(日)': log.leadTimeDays !== undefined ? log.leadTimeDays : '',
       '単位': item.unit || '',
       '端末情報': log.device || '',
       '位置情報': locStr
