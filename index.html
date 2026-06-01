@@ -12,6 +12,8 @@
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
   <!-- Html5-Qrcode for Barcode Scanning -->
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <!-- Fuse.js for Fuzzy Search -->
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.js"></script>
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -417,6 +419,7 @@ let itemStats = {}; // { code: { remain: 0, out1M: 0, out1Y: 0 } }
 let sortKey = 'code';
 let sortAsc = true;
 let geoPos = null;
+let fuseInstance = null; // Fuse.js instance for fuzzy searching
 let currentDeviceName = localStorage.getItem('inventoryDeviceName') || '';
 
 // =============================================
@@ -476,6 +479,14 @@ async function refreshData() {
     allItems.forEach(item => {
       item.nameNorm = normalize(item.name || '');
     });
+    
+    if (typeof Fuse !== 'undefined') {
+      fuseInstance = new Fuse(allItems, {
+        keys: ['nameNorm', 'code', 'barcode'],
+        threshold: 0.3, // 0.3 allows slight typos
+        ignoreLocation: true
+      });
+    }
     
     allLogs = await db.logs.toArray();
     calculateStats();
@@ -586,6 +597,7 @@ function doSearch() {
     if (keywords.length === 0) {
       filteredItems = allItems.slice();
     } else {
+      // 1. まず完全一致・部分一致（AND検索）を試す
       filteredItems = allItems.filter(row =>
         keywords.every(kw => 
           (row.nameNorm || '').includes(kw) || 
@@ -593,6 +605,12 @@ function doSearch() {
           normalize(row.barcode || '').includes(kw)
         )
       );
+
+      // 2. もし部分一致で1件も見つからなければ、あいまい検索（ファジー検索）に切り替える
+      if (filteredItems.length === 0 && fuseInstance) {
+        const rawNorm = normalize(raw);
+        filteredItems = fuseInstance.search(rawNorm).map(result => result.item);
+      }
     }
     
     filteredItems.sort((a, b) => {
