@@ -316,6 +316,7 @@
     <button class="device-name-btn" onclick="promptDeviceName()" title="端末名を設定">
       📱 <span id="deviceNameUI">未設定</span>
     </button>
+    <button class="btn" onclick="openHistoryModal(); toggleSidePanel();">🕒 最近の操作履歴</button>
     <button class="btn" onclick="openReportModal(); toggleSidePanel();">📊 月次レポート</button>
     <button class="btn" onclick="openItemModal(); toggleSidePanel();">＋ 新規アイテム</button>
     <button class="btn" onclick="exportMasterData(); toggleSidePanel();">📄 アイテムマスタDL</button>
@@ -375,6 +376,34 @@
     </div>
   </div>
 </main>
+
+<!-- HISTORY MODAL -->
+<div class="modal-overlay" id="historyModalOverlay">
+  <div class="modal" style="max-width: 600px;">
+    <div class="modal-header">
+      <h2 style="margin:0;">🕒 最近の操作履歴</h2>
+    </div>
+    <div class="modal-body" style="padding: 0;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+        <thead style="background: var(--bg3); position: sticky; top: 0;">
+          <tr>
+            <th style="padding: 8px;">日時</th>
+            <th style="padding: 8px;">処理</th>
+            <th style="padding: 8px;">品名</th>
+            <th style="padding: 8px; text-align:right;">数</th>
+            <th style="padding: 8px; text-align:center;">操作</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody">
+          <!-- JS will populate -->
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeHistoryModal()">閉じる</button>
+    </div>
+  </div>
+</div>
 
 <!-- REPORT MODAL -->
 <div class="modal-overlay" id="reportModalOverlay">
@@ -872,6 +901,60 @@ async function saveItem() {
   
   closeItemModal();
   await refreshData();
+}
+
+// =============================================
+//  HISTORY & UNDO
+// =============================================
+const historyModalOverlay = document.getElementById('historyModalOverlay');
+async function openHistoryModal() {
+  historyModalOverlay.style.display = 'flex';
+  await renderHistory();
+}
+function closeHistoryModal() {
+  historyModalOverlay.style.display = 'none';
+}
+
+async function renderHistory() {
+  const tbody = document.getElementById('historyBody');
+  const logs = await db.logs.orderBy('date').reverse().limit(50).toArray();
+  
+  if (logs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px;">履歴がありません</td></tr>';
+    return;
+  }
+  
+  let html = '';
+  for (const log of logs) {
+    const item = allItems.find(i => i.code === log.code) || { name: '不明' };
+    const d = new Date(log.date);
+    const dateStr = String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    
+    let actionStr = '';
+    let color = '';
+    if (log.type === 'in' || log.type === 'receive') { actionStr = '📥 入荷'; color = 'var(--green)'; }
+    else if (log.type === 'out') { actionStr = '📤 出庫'; color = 'var(--danger)'; }
+    else if (log.type === 'order') { actionStr = '🛒 発注'; color = '#1565c0'; }
+    else if (log.type === 'adjust') { actionStr = '✏️ 調整'; color = 'var(--accent)'; }
+    
+    html += `<tr>
+      <td style="padding: 8px;">${dateStr}</td>
+      <td style="padding: 8px; color: ${color}; font-weight: bold;">${actionStr}</td>
+      <td style="padding: 8px;">${esc(item.name)}</td>
+      <td style="padding: 8px; text-align:right;">${log.qty}</td>
+      <td style="padding: 8px; text-align:center;">
+        <button class="btn" style="padding: 4px 8px; font-size: 0.7rem;" onclick="undoLog(${log.id})">❌ 取消</button>
+      </td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+async function undoLog(id) {
+  if (!confirm("この操作を取り消しますか？\n（在庫数などが元に戻ります）")) return;
+  await db.logs.delete(id);
+  await refreshData();
+  await renderHistory(); // Refresh the list
 }
 
 // =============================================
