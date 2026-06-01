@@ -311,11 +311,12 @@
 
   <!-- SEARCH PANEL -->
   <div class="search-panel" id="mainApp" style="display:none">
-    <label>🔍 品名・コード・バーコード検索（スペース区切りでAND）</label>
-    <div class="search-row">
-      <input type="search" id="searchInput" class="search-input" placeholder="例: キャスティング GC" autocomplete="off" />
-      <button class="btn primary" onclick="openScannerForSearch()">📷 検索</button>
-      <button class="btn" onclick="clearSearch()">クリア</button>
+    <label>🔍 品名・コード・バーコード・音声で検索</label>
+    <div class="search-row" style="display:flex; gap:6px;">
+      <input type="search" id="searchInput" class="search-input" placeholder="キーワード検索..." autocomplete="off" style="flex:1;" />
+      <button class="btn" id="voiceSearchBtn" onclick="startVoiceSearch()" title="音声入力" style="padding: 6px 12px; font-size:1.2rem; min-width:44px; display:flex; justify-content:center; align-items:center;">🎤</button>
+      <button class="btn primary" onclick="openScannerForSearch()" title="カメラ読取" style="padding: 6px 12px; font-size:1.2rem; min-width:44px; display:flex; justify-content:center; align-items:center;">📷</button>
+      <button class="btn" onclick="clearSearch()" title="クリア" style="padding: 6px 12px; font-size:1.2rem; min-width:44px; display:flex; justify-content:center; align-items:center;">✕</button>
     </div>
   </div>
 
@@ -905,6 +906,72 @@ function startScanner() {
     alert("カメラの起動に失敗しました。ブラウザのカメラ権限が許可されているかご確認ください。");
     closeScannerModal();
   });
+}
+
+// =============================================
+//  VOICE SEARCH (Web Speech API)
+// =============================================
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang = 'ja-JP';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = function() {
+    const btn = document.getElementById('voiceSearchBtn');
+    btn.style.backgroundColor = '#ef5350';
+    btn.style.color = '#fff';
+    btn.innerText = '音声受付中...';
+    btn.style.fontSize = '0.7rem';
+    btn.style.minWidth = '80px';
+  };
+
+  recognition.onresult = function(event) {
+    const speechResult = event.results[0][0].transcript;
+    const searchInp = document.getElementById('searchInput');
+    if (searchInp.value) {
+      searchInp.value += ' ' + speechResult;
+    } else {
+      searchInp.value = speechResult;
+    }
+    doSearch();
+  };
+
+  recognition.onspeechend = function() {
+    recognition.stop();
+  };
+
+  recognition.onend = function() {
+    resetVoiceBtn();
+  };
+
+  recognition.onerror = function(event) {
+    console.warn("Speech recognition error", event.error);
+    resetVoiceBtn();
+    if(event.error !== 'no-speech') {
+       alert("音声入力エラー: " + event.error + "\n※マイクへのアクセスが許可されているかご確認ください。");
+    }
+  };
+}
+
+function startVoiceSearch() {
+  if (!recognition) {
+    alert("お使いのブラウザは音声入力に対応していません。(Chrome, Safari, Edge等をご利用ください)");
+    return;
+  }
+  recognition.start();
+}
+
+function resetVoiceBtn() {
+  const btn = document.getElementById('voiceSearchBtn');
+  btn.style.backgroundColor = '';
+  btn.style.color = '';
+  btn.innerText = '🎤';
+  btn.style.fontSize = '1.2rem';
+  btn.style.minWidth = '44px';
 }
 
 // =============================================
