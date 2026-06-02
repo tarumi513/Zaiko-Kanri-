@@ -8,8 +8,9 @@
 
   <!-- SheetJS -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <!-- Dexie.js for IndexedDB -->
-  <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
   <!-- Html5-Qrcode for Barcode Scanning -->
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <!-- Fuse.js for Fuzzy Search -->
@@ -460,13 +461,25 @@
 
 <script>
 // =============================================
-//  DB SETUP (Dexie)
+//  DB SETUP (Firebase)
 // =============================================
-const db = new Dexie("InventoryDB");
-db.version(1).stores({
-  items: 'code, cat, name',
-  logs: '++id, code, type, date'
+const firebaseConfig = {
+  apiKey: "AIzaSyAMbSLfjcvdZPW97j5he6YQUx1GGB2_mXI",
+  authDomain: "zaiko-kanri-6bad7.firebaseapp.com",
+  projectId: "zaiko-kanri-6bad7",
+  storageBucket: "zaiko-kanri-6bad7.firebasestorage.app",
+  messagingSenderId: "46719061975",
+  appId: "1:46719061975:web:a6789b09c0e67f34a90592",
+  measurementId: "G-J2367VTT3L"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+db.enablePersistence().catch(err => {
+  console.log("Offline persistence error:", err.code);
 });
+
+const itemsRef = db.collection('items');
+const logsRef = db.collection('logs');
 
 // State
 let allItems = [];
@@ -482,15 +495,16 @@ let currentDeviceName = localStorage.getItem('inventoryDeviceName') || '';
 // =============================================
 //  INIT & LOAD
 // =============================================
+let isItemsLoaded = false;
+let isLogsLoaded = false;
+
 window.addEventListener('DOMContentLoaded', async () => {
-  // 端末名が未設定なら設定を促す
   if (!currentDeviceName) {
     promptDeviceName();
   } else {
     updateDeviceNameUI();
   }
 
-  // Request Geolocation in background safely
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       pos => { geoPos = { lat: pos.coords.latitude, lng: pos.coords.longitude }; },
@@ -499,58 +513,82 @@ window.addEventListener('DOMContentLoaded', async () => {
     );
   }
 
-  await loadFromDB();
+  initRealtimeSync();
 });
 
-async function loadFromDB() {
-  showStatus("DB読込中...", "お待ちください");
-  const cnt = await db.items.count();
-  if (cnt === 0) {
-    document.getElementById('setupSection').style.display = 'block';
+function initRealtimeSync() {
+  showStatus("同期中...", "クラウドと通信しています");
+  
+  itemsRef.onSnapshot(snapshot => {
+    allItems = snapshot.docs.map(doc => doc.data());
+    // Ensure all items are properly normalized
+    allItems.forEach(item => {
+      item.nameNorm = normalize(item.name || '');
+    });
+    isItemsLoaded = true;
+    checkInitialRender();
+  }, err => {
+    alert("Firebase接続エラー(Items): " + err.message);
+  });
+  
+  logsRef.onSnapshot(snapshot => {
+    allLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    isLogsLoaded = true;
+    checkInitialRender();
+  }, err => {
+    alert("Firebase接続エラー(Logs): " + err.message);
+  });
+}
+
+function checkInitialRender() {
+  if (isItemsLoaded && isLogsLoaded) {
     hideStatus();
-    // 従来の自動読込を試行
-    try {
-      const res = await fetch('./data.xlsx');
-      if (res.ok) {
-        showStatus("自動読込中...", "data.xlsx");
-        const buf = await res.arrayBuffer();
-        await parseExcel(buf);
-      }
-    } catch (e) {
-      console.warn("自動ロードスキップまたはエラー:", e);
-    }
-  } else {
+    calculateStats();
+    updateFuseAndRender();
+  }
+}
+
+function updateFuseAndRender() {
+  if (allItems.length > 0) {
     document.getElementById('setupSection').style.display = 'none';
-    await refreshData();
     document.getElementById('mainApp').style.display = 'block';
     document.getElementById('tableWrap').style.display = 'block';
-    hideStatus();
+    if (typeof Fuse !== 'undefined') {
+      fuseInstance = new Fuse(allItems, {
+        keys: ['nameNorm', 'code', 'barcode'],
+        threshold: 0.3,
+        ignoreLocation: true
+      });
+    }
+  } else {
+    document.getElementById('setupSection').style.display = 'block';
+    document.getElementById('mainApp').style.display = 'none';
+    document.getElementById('tableWrap').style.display = 'none';
+    // 従来の自動読込を試行（DBが空の場合）
+    tryAutoLoadExcel();
+  }
+  
+  doSearch();
+}
+
+async function tryAutoLoadExcel() {
+  try {
+    const res = await fetch('./data.xlsx');
+    if (res.ok) {
+      showStatus("自動読込中...", "data.xlsx");
+      const buf = await res.arrayBuffer();
+      await parseExcel(buf);
+    }
+  } catch (e) {
+    console.warn("自動ロードスキップまたはエラー:", e);
   }
 }
 
 async function refreshData() {
-  try {
-    allItems = await db.items.toArray();
-    
-    // Ensure all items are properly normalized (fixes old data missing half-width conversion)
-    allItems.forEach(item => {
-      item.nameNorm = normalize(item.name || '');
-    });
-    
-    if (typeof Fuse !== 'undefined') {
-      fuseInstance = new Fuse(allItems, {
-        keys: ['nameNorm', 'code', 'barcode'],
-        threshold: 0.3, // 0.3 allows slight typos
-        ignoreLocation: true
-      });
-    }
-    
-    allLogs = await db.logs.toArray();
+  // onSnapshotによる自動更新のため、ここでは手動再計算のみ
+  if (isItemsLoaded && isLogsLoaded) {
     calculateStats();
-    doSearch();
-  } catch(e) {
-    console.error("Refresh Error:", e);
-    alert("データの読み込み中にエラーが発生しました。");
+    updateFuseAndRender();
   }
 }
 
@@ -631,16 +669,22 @@ async function parseExcel(arrayBuffer) {
       });
     }
 
-    showStatus("DB保存中...", "しばらくお待ちください");
-    await db.transaction('rw', db.items, async () => {
-      await db.items.clear();
-      await db.items.bulkPut(rows); // bulkAddからbulkPutに変更（重複コード対策）
-    });
+    showStatus("クラウドDB保存中...", "しばらくお待ちください");
+    
+    // Firestore uses batches of max 500 operations
+    const BATCH_SIZE = 400;
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const chunk = rows.slice(i, i + BATCH_SIZE);
+      const batch = db.batch();
+      chunk.forEach(item => {
+        const docRef = itemsRef.doc(item.code);
+        batch.set(docRef, item);
+      });
+      await batch.commit();
+    }
 
     document.getElementById('setupSection').style.display = 'none';
-    await refreshData();
-    document.getElementById('mainApp').style.display = 'block';
-    document.getElementById('tableWrap').style.display = 'block';
+    // onSnapshot will handle UI update automatically
     hideStatus();
   } catch (err) {
     console.error("解析エラー:", err);
@@ -813,7 +857,7 @@ async function registerLog(code, type) {
 
   if (type === 'receive') {
     // Calculate lead time based on FIFO order fulfillment
-    const codeLogs = await db.logs.where('code').equals(code).toArray();
+    const codeLogs = allLogs.filter(l => l.code === code);
     codeLogs.sort((a, b) => new Date(a.date) - new Date(b.date));
     
     const orders = codeLogs.filter(l => l.type === 'order');
@@ -838,7 +882,7 @@ async function registerLog(code, type) {
     }
   }
   
-  await db.logs.add(log);
+  await logsRef.add(log);
   input.value = '';
   await refreshData();
 }
@@ -911,21 +955,21 @@ async function saveItem() {
   
   if (mode === "add") {
     item.remain = Number(document.getElementById('mRemain').value) || 0;
-    const exists = await db.items.get(code);
+    const exists = allItems.find(i => i.code === code);
     if(exists) { alert("このコードは既に存在します"); return; }
-    await db.items.put(item);
+    await itemsRef.doc(code).set(item);
   } else {
     // Edit mode
     const origCode = document.getElementById('modalOriginalCode').value;
-    const existing = await db.items.get(origCode);
+    const existing = allItems.find(i => i.code === origCode);
     item.remain = existing.remain;
-    await db.items.put(item);
+    await itemsRef.doc(origCode).set(item);
     
     // Check if remain was adjusted
     const newQty = Number(document.getElementById('mRemain').value);
     const stat = itemStats[origCode] || { remain: 0 };
     if (!isNaN(newQty) && newQty !== stat.remain) {
-      await db.logs.add({
+      await logsRef.add({
         code: origCode,
         type: 'adjust',
         qty: newQty,
@@ -954,7 +998,7 @@ function closeHistoryModal() {
 
 async function renderHistory() {
   const tbody = document.getElementById('historyBody');
-  const logs = await db.logs.orderBy('date').reverse().limit(50).toArray();
+  const logs = [...allLogs].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 50);
   
   if (logs.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px;">履歴がありません</td></tr>';
@@ -989,19 +1033,19 @@ async function renderHistory() {
 
 async function undoLog(id) {
   if (!confirm("この操作を取り消しますか？\n（在庫数などが元に戻ります）")) return;
-  await db.logs.delete(id);
+  await logsRef.doc(id).delete();
   await refreshData();
   await renderHistory(); // Refresh the list
 }
 
 async function undoLastLog(code) {
-  const logs = await db.logs.where('code').equals(code).toArray();
-  if (logs.length === 0) {
+  const codeLogs = allLogs.filter(l => l.code === code);
+  if (codeLogs.length === 0) {
     alert("このアイテムの操作履歴はありません");
     return;
   }
-  logs.sort((a, b) => new Date(b.date) - new Date(a.date));
-  const lastLog = logs[0];
+  codeLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
+  const lastLog = codeLogs[0];
   
   let actionStr = '';
   if (lastLog.type === 'in' || lastLog.type === 'receive') actionStr = '入荷';
@@ -1014,7 +1058,7 @@ async function undoLastLog(code) {
   
   if (!confirm(`このアイテムの直近の操作を取り消しますか？\n処理: ${actionStr}\n数量: ${lastLog.qty}\n日時: ${dateStr}`)) return;
   
-  await db.logs.delete(lastLog.id);
+  await logsRef.doc(lastLog.id).delete();
   await refreshData();
 }
 
@@ -1022,9 +1066,7 @@ async function undoLastLog(code) {
 //  BACKUP & RESTORE
 // =============================================
 async function exportBackup() {
-  const i = await db.items.toArray();
-  const l = await db.logs.toArray();
-  const data = JSON.stringify({ items: i, logs: l });
+  const data = JSON.stringify({ items: allItems, logs: allLogs });
   const blob = new Blob([data], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1049,19 +1091,42 @@ async function importBackup(e) {
         showStatus("データ復元中...", "お待ちください");
 
         if (!isMerge) {
-          if(confirm("※本当に現在のデータを全て消去して上書きしますか？")) {
-            await db.transaction('rw', db.items, db.logs, async () => {
-              await db.items.clear();
-              await db.logs.clear();
-              await db.items.bulkAdd(data.items);
-              await db.logs.bulkAdd(data.logs);
-            });
+          if(confirm("※本当に現在のデータを全て消去して上書きしますか？\n（クラウド上のデータも全て上書きされます）")) {
+            // Delete all existing items and logs in batches
+            let batch = db.batch();
+            let count = 0;
+            for (const item of allItems) {
+              batch.delete(itemsRef.doc(item.code));
+              count++;
+              if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
+            }
+            for (const log of allLogs) {
+              batch.delete(logsRef.doc(log.id));
+              count++;
+              if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
+            }
+            await batch.commit();
+            
+            // Insert new ones
+            batch = db.batch();
+            count = 0;
+            for (const item of data.items) {
+              batch.set(itemsRef.doc(item.code), item);
+              count++;
+              if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
+            }
+            for (const log of data.logs) {
+              const ref = log.id ? logsRef.doc(log.id) : logsRef.doc();
+              batch.set(ref, log);
+              count++;
+              if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
+            }
+            await batch.commit();
             alert("すべてのデータを上書き復元しました");
           }
         } else {
           // マージ（統合）処理
-          const localLogs = await db.logs.toArray();
-          const localLogKeys = new Set(localLogs.map(l => `${l.code}_${l.type}_${l.date}`));
+          const localLogKeys = new Set(allLogs.map(l => `${l.code}_${l.type}_${l.date}`));
           
           const newLogs = [];
           for (const l of data.logs) {
@@ -1072,20 +1137,24 @@ async function importBackup(e) {
             }
           }
 
-          await db.transaction('rw', db.items, db.logs, async () => {
-            // アイテムはコードをキーに上書き・追加
-            await db.items.bulkPut(data.items);
-            // ログは差分（新規）のみ追加
-            if (newLogs.length > 0) {
-              await db.logs.bulkAdd(newLogs);
-            }
-          });
+          let batch = db.batch();
+          let count = 0;
+          for (const item of data.items) {
+            batch.set(itemsRef.doc(item.code), item);
+            count++;
+            if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
+          }
+          for (const log of newLogs) {
+            batch.set(logsRef.doc(), log);
+            count++;
+            if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
+          }
+          await batch.commit();
           
           alert(`データを統合しました！\n追加された新しいログ: ${newLogs.length}件`);
         }
         
         hideStatus();
-        await refreshData();
       } else {
         alert("無効なバックアップファイルです");
       }
@@ -1239,7 +1308,6 @@ async function exportMonthlyReport() {
   if (!ym) return;
   const [year, month] = ym.split('-');
   
-  const allLogs = await db.logs.toArray();
   // Filter logs for the specific month
   const targetLogs = allLogs.filter(log => {
     if (!['out', 'order', 'receive'].includes(log.type)) return false;
@@ -1253,7 +1321,7 @@ async function exportMonthlyReport() {
   }
   
   const itemsDict = {};
-  for (const it of await db.items.toArray()) {
+  for (const it of allItems) {
     itemsDict[it.code] = it;
   }
   
@@ -1307,7 +1375,10 @@ async function sendReportEmail() {
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
 
-  const logs = await db.logs.where('date').between(start.toISOString(), end.toISOString()).toArray();
+  const logs = allLogs.filter(l => {
+    const d = new Date(l.date);
+    return d >= start && d < end;
+  });
   const outLogs = logs.filter(l => ['out', 'order', 'receive'].includes(l.type));
   
   if (outLogs.length === 0) {
@@ -1393,7 +1464,7 @@ function openEmailSettings() {
 }
 
 async function exportMasterData() {
-  const items = await db.items.toArray();
+  const items = allItems;
   const exportData = items.map(item => ({
     'コード': item.code,
     '分類': item.cat || '',
