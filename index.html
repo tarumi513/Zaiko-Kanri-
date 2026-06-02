@@ -287,6 +287,10 @@
     <div class="sub">DB保存・自動予測対応版</div>
   </div>
   
+  <div style="margin-right: 12px; font-size: 0.75rem; cursor: pointer; color: var(--accent); display: flex; align-items: center; gap: 4px; background: rgba(59,138,250,0.1); padding: 4px 8px; border-radius: 12px;" onclick="promptDeviceName()" title="端末名を変更">
+    📱 <span id="deviceNameUIMain">未設定</span>
+  </div>
+  
   <button class="hamburger-btn" onclick="toggleSidePanel()">☰</button>
   
   <div class="header-actions">
@@ -1425,6 +1429,9 @@ function promptDeviceName() {
 function updateDeviceNameUI() {
   const el = document.getElementById('deviceNameUI');
   if (el) el.innerText = currentDeviceName || '未設定';
+  
+  const elMain = document.getElementById('deviceNameUIMain');
+  if (elMain) elMain.innerText = currentDeviceName || '未設定';
 }
 
 function checkAdmin() {
