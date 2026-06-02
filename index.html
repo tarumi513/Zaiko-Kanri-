@@ -677,7 +677,7 @@ async function parseExcel(arrayBuffer) {
       const chunk = rows.slice(i, i + BATCH_SIZE);
       const batch = db.batch();
       chunk.forEach(item => {
-        const docRef = itemsRef.doc(item.code);
+        const docRef = itemsRef.doc(String(item.code));
         batch.set(docRef, item);
       });
       await batch.commit();
@@ -957,13 +957,13 @@ async function saveItem() {
     item.remain = Number(document.getElementById('mRemain').value) || 0;
     const exists = allItems.find(i => i.code === code);
     if(exists) { alert("このコードは既に存在します"); return; }
-    await itemsRef.doc(code).set(item);
+    await itemsRef.doc(String(code)).set(item);
   } else {
     // Edit mode
     const origCode = document.getElementById('modalOriginalCode').value;
     const existing = allItems.find(i => i.code === origCode);
     item.remain = existing.remain;
-    await itemsRef.doc(origCode).set(item);
+    await itemsRef.doc(String(origCode)).set(item);
     
     // Check if remain was adjusted
     const newQty = Number(document.getElementById('mRemain').value);
@@ -1033,7 +1033,7 @@ async function renderHistory() {
 
 async function undoLog(id) {
   if (!confirm("この操作を取り消しますか？\n（在庫数などが元に戻ります）")) return;
-  await logsRef.doc(id).delete();
+  await logsRef.doc(String(id)).delete();
   await refreshData();
   await renderHistory(); // Refresh the list
 }
@@ -1058,7 +1058,7 @@ async function undoLastLog(code) {
   
   if (!confirm(`このアイテムの直近の操作を取り消しますか？\n処理: ${actionStr}\n数量: ${lastLog.qty}\n日時: ${dateStr}`)) return;
   
-  await logsRef.doc(lastLog.id).delete();
+  await logsRef.doc(String(lastLog.id)).delete();
   await refreshData();
 }
 
@@ -1096,12 +1096,12 @@ async function importBackup(e) {
             let batch = db.batch();
             let count = 0;
             for (const item of allItems) {
-              batch.delete(itemsRef.doc(item.code));
+              batch.delete(itemsRef.doc(String(item.code)));
               count++;
               if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
             }
             for (const log of allLogs) {
-              batch.delete(logsRef.doc(log.id));
+              batch.delete(logsRef.doc(String(log.id)));
               count++;
               if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
             }
@@ -1111,12 +1111,12 @@ async function importBackup(e) {
             batch = db.batch();
             count = 0;
             for (const item of data.items) {
-              batch.set(itemsRef.doc(item.code), item);
+              batch.set(itemsRef.doc(String(item.code)), item);
               count++;
               if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
             }
             for (const log of data.logs) {
-              const ref = log.id ? logsRef.doc(log.id) : logsRef.doc();
+              const ref = log.id ? logsRef.doc(String(log.id)) : logsRef.doc();
               batch.set(ref, log);
               count++;
               if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
@@ -1140,7 +1140,7 @@ async function importBackup(e) {
           let batch = db.batch();
           let count = 0;
           for (const item of data.items) {
-            batch.set(itemsRef.doc(item.code), item);
+            batch.set(itemsRef.doc(String(item.code)), item);
             count++;
             if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
           }
