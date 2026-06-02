@@ -746,6 +746,20 @@ function renderTable() {
     </tr>`;
   }
   tbody.innerHTML = html;
+  
+  // 状態の復元とスクロール維持
+  if (openDetailsCode) {
+    const targetRow = document.getElementById(`details-${openDetailsCode}`);
+    if (targetRow) {
+      targetRow.style.display = 'table-row';
+      setTimeout(() => {
+        const mainRow = targetRow.previousElementSibling;
+        if (mainRow) {
+          mainRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 50);
+    }
+  }
 }
 
 let openDetailsCode = null;
@@ -762,6 +776,14 @@ function toggleItemDetails(code) {
   if (targetRow.style.display === 'none') {
     targetRow.style.display = 'table-row';
     openDetailsCode = code;
+    
+    // スムーズに中央へスクロール
+    setTimeout(() => {
+      const mainRow = targetRow.previousElementSibling;
+      if (mainRow) {
+        mainRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 10);
   } else {
     targetRow.style.display = 'none';
     openDetailsCode = null;
